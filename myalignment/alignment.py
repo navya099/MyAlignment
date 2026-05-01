@@ -1,0 +1,105 @@
+
+from myalignment.exception.alignment_error import AlignmentError, InvalidGeometryError
+from myalignment.segment.segment_collection import SegmentCollection
+from datetime import datetime
+
+class Alignment:
+    """하나의 노선을 나타내는 고수준 객체"""
+
+    def __init__(self, name: str = "Alignment1"):
+        self.name = name
+        self.collection = SegmentCollection()
+        self.profiles: []
+        self.structures = []
+        self.metadata = {
+            "designer": '',
+            "date_created": datetime.now(),
+            "remarks": "",
+            "design_speed": 0,
+            "route_type": ''
+        }
+
+    # ---- Proxy (컬렉션 기능 연결) ----
+    def create(self, coord_list, radius_list):
+        try:
+            self.collection.create_by_pi_coords(coord_list, radius_list)
+        except AlignmentError as e:
+            # 로깅 or 변환 (예: GUI가 읽기 쉬운 메시지로)
+            raise e
+
+    def update_pi(self, pipoint, index):
+        """PI업데이트"""
+        try:
+            self.collection.update_pi_and_radius_by_index(pipoint=pipoint, radius=None, index=index)
+        except InvalidGeometryError as e:
+            # 로깅 or 변환 (예: GUI가 읽기 쉬운 메시지로)
+            raise e
+    def update_radius(self, radius, index):
+        """반경 업데이트"""
+        try:
+            self.collection.update_pi_and_radius_by_index(pipoint=None, radius=radius, index=index)
+        except InvalidGeometryError as e:
+            # 로깅 or 변환 (예: GUI가 읽기 쉬운 메시지로)
+            raise e
+
+    def remove_pi(self, index):
+        """PI 삭제"""
+        try:
+            self.collection.remove_pi(index)
+        except InvalidGeometryError as e:
+            # 로깅 or 변환 (예: GUI가 읽기 쉬운 메시지로)
+            raise e
+
+    def add_pi(self, pi_point):
+        """PI추가"""
+        try:
+            self.collection.add_pi(pi_point)
+        except InvalidGeometryError as e:
+            # 로깅 or 변환 (예: GUI가 읽기 쉬운 메시지로)
+            raise e
+
+    # ---- 고급 기능 ----
+    @property
+    def start_sta(self):
+        return self.collection.segment_list[0].start_sta if self.collection.segment_list else 0.0
+
+    @property
+    def end_sta(self):
+        return self.collection.segment_list[-1].end_sta if self.collection.segment_list else 0.0
+
+    @property
+    def length(self):
+        """노선 총연장 반환"""
+        return self.end_sta - self.start_sta
+
+    @property
+    def bridge_count(self):
+        """교량 갯수"""
+        return 0
+
+    @property
+    def tunnel_count(self):
+        """터널 갯수"""
+        return 0
+
+    @property
+    def cost(self):
+        """공사비"""
+        return 0
+
+    @property
+    def radius_count(self):
+        """곡선 갯수"""
+        return len(self.collection.radius_list) if self.collection.radius_list else 0
+
+    @property
+    def min_radius(self):
+        """최소곡선반경"""
+        return min(self.collection.radius_list) if self.collection.radius_list else 0.0
+
+    def summary(self):
+        """요약정보 출력"""
+        print(f"Alignment: {self.name}")
+        print(f"Total length: {self.length:.3f} m")
+        print(f"PI count: {len(self.collection.coord_list)}")
+        print(f"Segment count: {len(self.collection.segment_list)}")
