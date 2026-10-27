@@ -5,7 +5,7 @@ setup(
     version="0.1",
     packages=find_packages(),
     install_requires=[
-        "autocad>=0.1.0",
+        "myautocad>=0.1.0",
         "numpy"
     ],
 )

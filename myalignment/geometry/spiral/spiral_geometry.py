@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import math
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 from myalignment.utils.curvedirection import CurveDirection
 from myalignment.geometry.segmentgeometry import SegmentGeometry
 from myalignment.geometry.spiral.params import TransitionCurveParams

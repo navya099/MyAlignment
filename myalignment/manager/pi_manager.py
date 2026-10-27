@@ -1,4 +1,4 @@
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 from myalignment.exception.alignment_error import PIOutOfRangeError
 from myalignment.helper.pi_helper import PIHelper
 

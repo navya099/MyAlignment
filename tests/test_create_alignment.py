@@ -1,5 +1,5 @@
 from myalignment.alignment import Alignment
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 al = Alignment(name='test')
 coords = [
         Point2d(0, 0),

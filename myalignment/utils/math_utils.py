@@ -10,7 +10,7 @@ def get_station_by_block_index(index, interval):
 
 def _to_xy(p):
     """완전 private: 다양한 타입을 (x, y) 튜플로 변환"""
-    # AutoCAD Point2d
+    # myautocad Point2d
     if hasattr(p, "x") and hasattr(p, "y"):
         return p.x, p.y
 

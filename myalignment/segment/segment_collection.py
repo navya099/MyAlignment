@@ -1,4 +1,4 @@
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 from myalignment.exception.alignment_error import NoUpdatePIError, CurveCreationError
 from myalignment.manager.curve_manager import CurveManager
 from myalignment.helper.pi_helper import PIHelper

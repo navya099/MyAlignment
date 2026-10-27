@@ -1,4 +1,4 @@
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 
 class CurveHelper:
     """Curve 삽입/정렬 헬퍼"""

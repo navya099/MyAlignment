@@ -2,7 +2,7 @@
 import math
 from dataclasses import dataclass, field
 
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 from myalignment.geometry.segmentgeometry import SegmentGeometry
 from myalignment.utils.math_utils import calculate_bearing, calculate_distance
 

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 from myalignment.utils.curvedirection import CurveDirection
 from myalignment.geometry.simplecurve.curvegeometry import CurveGeometry
 from myalignment.segment.segment import Segment

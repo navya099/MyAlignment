@@ -2,7 +2,7 @@ from abc import abstractmethod, ABC
 from dataclasses import dataclass, field
 from typing import Self
 
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 from myalignment.utils.curvetype import CurveType
 
 @dataclass

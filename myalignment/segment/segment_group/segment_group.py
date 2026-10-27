@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 from myalignment.enum.alignmententitytype import AlignmentEntityType
 from myalignment.segment.segment import Segment
 from myalignment.segment.segment_group.group_builder import SegmentGroupBuilder

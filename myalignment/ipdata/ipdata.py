@@ -1,7 +1,7 @@
 from dataclasses import field, dataclass
 from typing import Self
 
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 
 
 @dataclass

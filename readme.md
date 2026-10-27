@@ -8,7 +8,7 @@ myalignment는 파이썬 기반의 선형 패키지로, 원곡선 ,직선, 완�
 - `segment`,: 선형을 이루는 단위 객체
 
 ## Dependence
-autocad: point2d
+myautocad: point2d
 
 ## Installation
 로컬 개발 환경에서 설치하려면:

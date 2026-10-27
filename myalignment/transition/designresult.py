@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 from myalignment.geometry.simplecurve.curvegeometry import CurveGeometry
 from myalignment.geometry.spiral.spiral_geometry import SpiralGeometry
 

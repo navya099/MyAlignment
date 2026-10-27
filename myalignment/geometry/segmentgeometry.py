@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from autocad.point2d import Point2d
+from myautocad.point2d import Point2d
 
 
 class SegmentGeometry(ABC):
