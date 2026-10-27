@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from .profileentitytype import ProfileEntityType
-from utils import generate_entity_id
+from ..utils.utils import generate_entity_id
+
 
 @dataclass
 class ProfileEntity:

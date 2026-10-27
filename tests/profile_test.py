@@ -1,4 +1,4 @@
-from .profile import Profile
+from myalignment.profile.profile import Profile
 
 def test_profile():
     # 1. Profile 생성
