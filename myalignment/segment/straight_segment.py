@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from myautocad.point2d import Point2d
+from cadgeom import Point2d
 from myalignment.geometry.straight.straightgeometry import StraightGeometry
 from myalignment.segment.segment import Segment
 

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from myautocad.point2d import Point2d
+from cadgeom import Point2d
 from myalignment.utils.curvedirection import CurveDirection
 
 
