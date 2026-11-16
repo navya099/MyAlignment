@@ -1,7 +1,7 @@
-from Structure.bridge import Bridge
-from Structure.structure import Structure
-from Structure.tunnel import Tunnel
-from logger import logger
+from myalignment.structure.bridge import Bridge
+from myalignment.structure.structure import Structure
+from myalignment.structure.tunnel import Tunnel
+
 
 class StructureCollection(list):
     """구조물들을 컬렉션하는 클래스(리스트 상속)"""
