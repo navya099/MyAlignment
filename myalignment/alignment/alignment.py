@@ -3,6 +3,7 @@ from typing import Iterator
 
 from cadgeom import Point2d
 
+from myalignment.alignment.alignment_query import AlignmentQuery
 from myalignment.alignment.alignment_transaction import AlignmentTransaction
 from myalignment.profile.profile import Profile
 from myalignment.core.projection_result import ProjectionResult
@@ -109,12 +110,11 @@ class Alignment:
             - signed_distance: 좌(+)/우(-) 부호 거리.
             - station_on_other: 대상 선형의 측점.
         """
-        from alignment.alignment_query import AlignmentQuery
+
         return AlignmentQuery.distance_to_alignment(self, station, other, side)
 
     def intersection_with(self, other: "Alignment") -> list[StationOffsetPoint]:
         """두 선형의 교차점들 (station-offset)."""
-        from alignment.alignment_query import AlignmentQuery
         return AlignmentQuery.intersection(self, other)
 
     def offset_alignment(self, offset: float) -> "Alignment":
