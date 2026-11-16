@@ -48,18 +48,27 @@ class LineGeometry(Geometry):
 
     def project_at(self, p: Point2d) -> ProjectionResult:
         """로컬 점 p를 직선에 투영."""
-        lx, ly = self._to_local_coords(p)
+        # p는 AlignmentEntity.project()에서 이미 로컬 좌표계로 변환되어 전달된 점(lx, ly)입니다.
+        lx, ly = p.x, p.y
 
-        s = max(0.0, min(self._length, lx))
         is_on = (0.0 <= lx <= self._length)
 
-        # 로컬 투영점
-        proj_local = Point2d(s, 0.0)
+        # 측점(s) 및 실제 거리(distance) 계산
+        if lx < 0.0:
+            s = 0.0
+            distance = math.hypot(lx, ly)  # 시작점(0, 0)까지의 거리
+        elif lx > self._length:
+            s = self._length
+            distance = math.hypot(lx - self._length, ly)  # 끝점(length, 0)까지의 거리
+        else:
+            s = lx
+            distance = abs(ly)  # 선분 내부 수직 거리
+
+        # 로컬 투영점 월드 변환 준비
         proj_world = self._to_local_point(s, 0.0)
 
         # offset: 로컬 y의 반대 (좌-, 우+)
         offset = -ly
-        distance = abs(ly)
 
         return ProjectionResult(
             point=proj_world,
