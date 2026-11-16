@@ -51,6 +51,15 @@ class AlignmentEntityCollection:
         return self.entities[-1].end_station if self.entities else 0.0
 
     @property
+    def start_coord(self) -> Point2d:
+        return self.entities[0].start_coord if self.entities else Point2d(0, 0)
+
+    @property
+    def end_coord(self) -> Point2d:
+        """컬렉션 전체의 끝점 월드 좌표."""
+        return self.entities[-1].end_coord if self.entities else Point2d(0, 0)
+
+    @property
     def length(self) -> float:
         return self.end_station - self.start_station if self.entities else 0.0
 
