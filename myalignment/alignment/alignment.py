@@ -13,6 +13,7 @@ from myalignment.enitity.entity_collection import AlignmentEntityCollection
 from myalignment.profile.profiletype import ProfileType
 from myalignment.structure.structurecollection import StructureCollection
 from myalignment.structure.struturetype import StructureType
+from myalignment.superelevation.collection import SuperelevationCollection
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,10 @@ class Alignment:
     design_speed: float = 0.0
     route_type: str = ""
     metadata: dict = field(default_factory=dict)
+
+    superelevation: SuperelevationCollection = field(
+        default_factory=SuperelevationCollection
+    )
 
     # ================================================================
     # 기본 속성
@@ -209,6 +214,15 @@ class Alignment:
         """터널 단가 (원/m)."""
         return float(self.metadata.get('tunnel_unit_cost', 10_000_000))
 
+    @property
+    def has_superelevation(self) -> bool:
+        return len(self.superelevation) > 0
+
+    def superelevation_at(self, station: float):
+        """측점의 편구배 임계 측점."""
+        curve = self.superelevation.curve_at_station(station)
+        return curve.critical_station_at(station) if curve else None
+    
     # ================================================================
     # Transaction 기반 수정
     # ================================================================
