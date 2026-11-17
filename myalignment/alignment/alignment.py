@@ -147,15 +147,21 @@ class Alignment:
 
     @property
     def grades_count(self) -> int:
-        """FG 프로파일의 PVI 개수."""
+        """FG 프로파일의 PVI 개수 (기존 API 호환)."""
         fg = self.fg_profile
-        return len(fg.pvis) if fg else 0
+        return fg.pvi_count if fg else 0
 
     @property
     def max_grade(self) -> float:
-        """FG 프로파일의 최대 기울기."""
+        """FG 프로파일의 최대 오르막 (양수)."""
         fg = self.fg_profile
         return fg.max_slope if fg else 0.0
+
+    @property
+    def max_abs_grade(self) -> float:
+        """FG 프로파일의 최대 절댓값 구배."""
+        fg = self.fg_profile
+        return fg.max_abs_slope if fg else 0.0
 
     # ================================================================
     # Structure 조회
