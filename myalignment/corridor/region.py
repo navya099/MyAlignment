@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import math
 
+from myalignment.assembly.assembly import Assembly
+
 
 @dataclass(frozen=True, slots=True)
 class CorridorRegion:
@@ -14,7 +16,7 @@ class CorridorRegion:
     name: str = ""
     start_station: float = 0.0
     end_station: float = 0.0
-    assembly_name: str = ""
+    assembly: Assembly | None = None
     frequency: float = 10.0  # 측점 간격 (m)
 
     def __post_init__(self):
@@ -39,3 +41,13 @@ class CorridorRegion:
             self.start_station + self.length * i / (n - 1)
             for i in range(n)
         ] if n > 1 else [self.start_station]
+
+    def cross_section_at(self, station: float):
+        """
+        주어진 측점의 횡단면 (어셈블리 로컬).
+
+        Returns: (points, links)
+        """
+        if self.assembly is None:
+            return (), ()
+        return self.assembly.generate_cross_section()

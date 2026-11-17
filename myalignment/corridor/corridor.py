@@ -75,3 +75,18 @@ class Corridor:
             f"regions={len(self.regions)}, "
             f"len={self.length:.1f}m)"
         )
+
+    def cross_section_at(self, station: float) -> tuple[tuple, tuple]:
+        """측점의 횡단면."""
+        region = self.region_at(station)
+        if region is None:
+            return (), ()
+        return region.cross_section_at(station)
+
+    def sample_cross_sections(self) -> dict[float, tuple[tuple, tuple]]:
+        """전체 코리더의 횡단면 샘플."""
+        result = {}
+        for region in self.regions:
+            for sta in region.sample_stations():
+                result[sta] = region.cross_section_at(sta)
+        return result
