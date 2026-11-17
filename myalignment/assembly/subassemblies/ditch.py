@@ -16,7 +16,7 @@ class VShapeDitch(Subassembly):
     depth: float = 0.5
     side: int = 1
 
-    def generate_geometry(self):
+    def generate_geometry(self, target_mapping: "TargetMapping | None" = None):
         p1 = AssemblyPoint(code=PointCode.DITCH_INNER, x=0.0, z=0.0)
         p2 = AssemblyPoint(code=PointCode.DITCH_BOTTOM, x=self.width / 2, z=-self.depth)
         p3 = AssemblyPoint(code=PointCode.DITCH_OUTER, x=self.width, z=0.0)

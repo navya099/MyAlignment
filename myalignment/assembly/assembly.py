@@ -7,6 +7,7 @@ from myalignment.assembly.codes import PointCode
 from myalignment.assembly.link import AssemblyLink
 from myalignment.assembly.point import AssemblyPoint
 from myalignment.assembly.subassembly import Subassembly
+from myalignment.target.mapping import TargetMapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +23,10 @@ class Assembly:
     left_subassemblies: tuple[Subassembly, ...] = field(default_factory=tuple)
     right_subassemblies: tuple[Subassembly, ...] = field(default_factory=tuple)
 
-    def generate_cross_section(self) -> tuple[tuple[AssemblyPoint, ...], tuple[AssemblyLink, ...]]:
+    def generate_cross_section(
+            self,
+            target_mapping: TargetMapping | None = None,
+            ) -> tuple[tuple[AssemblyPoint, ...], tuple[AssemblyLink, ...]]:
         """
         어셈블리 전체의 횡단면 생성 (로컬 좌표).
 
@@ -43,6 +47,7 @@ class Assembly:
             origin=(0.0, 0.0),
             points=all_points,
             links=all_links,
+            target_mapping=target_mapping
         )
 
         # 좌측 배치 (side=-1)
@@ -52,11 +57,20 @@ class Assembly:
             origin=(0.0, 0.0),
             points=all_points,
             links=all_links,
+            target_mapping=target_mapping
         )
 
         return tuple(all_points), tuple(all_links)
 
-    def _place_side(self, subassemblies, side_sign, origin, points, links):
+    def _place_side(
+            self,
+            subassemblies: tuple[Subassembly, ...],
+            side_sign: int,
+            origin: tuple[float, float],
+            points: list,
+            links: list,
+            target_mapping: TargetMapping | None,
+    ):
         current_x, current_z = origin
 
         for sub in subassemblies:
@@ -64,6 +78,7 @@ class Assembly:
                 origin_x=current_x,
                 origin_z=current_z,
                 side_sign=side_sign,
+                target_mapping=target_mapping
             )
 
             for p in placed_points:

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import math
 
 from myalignment.assembly.assembly import Assembly
+from myalignment.target.mapping import TargetMapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +19,7 @@ class CorridorRegion:
     end_station: float = 0.0
     assembly: Assembly | None = None
     frequency: float = 10.0  # 측점 간격 (m)
-
+    target_mapping: TargetMapping = field(default_factory=TargetMapping.empty)
     def __post_init__(self):
         if self.end_station < self.start_station:
             raise ValueError(f"end < start: {self.end_station} < {self.start_station}")
@@ -50,4 +51,9 @@ class CorridorRegion:
         """
         if self.assembly is None:
             return (), ()
-        return self.assembly.generate_cross_section()
+        return self.assembly.generate_cross_section(self.target_mapping)
+
+    def with_targets(self, mapping: TargetMapping) -> "CorridorRegion":
+        """Target 매핑 갱신한 새 Region."""
+        from dataclasses import replace
+        return replace(self, target_mapping=mapping)

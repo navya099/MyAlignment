@@ -20,7 +20,7 @@ class Shoulder(Subassembly):
         if self.width <= 0:
             raise ValueError(f"width > 0 필요: {self.width}")
 
-    def generate_geometry(self):
+    def generate_geometry(self, target_mapping: "TargetMapping | None" = None):
         start = AssemblyPoint(code=PointCode.SHOULDER_INNER, x=0.0, z=0.0)
         end = AssemblyPoint(
             code=PointCode.SHOULDER_OUTER,

@@ -1,9 +1,11 @@
 # corridor/corridor_builder.py
 from __future__ import annotations
 
+from myalignment.assembly.assembly import Assembly
 from myalignment.corridor.baseline import CorridorBaseline
 from myalignment.corridor.corridor import Corridor
 from myalignment.corridor.region import CorridorRegion
+from myalignment.target.mapping import TargetMapping
 
 
 class CorridorBuilder:
@@ -12,6 +14,27 @@ class CorridorBuilder:
         self._name = name
         self._baselines: list[CorridorBaseline] = []
         self._regions: list[CorridorRegion] = []
+
+    def add_region_with_assembly(
+            self,
+            name: str,
+            start_station: float,
+            end_station: float,
+            assembly: Assembly,
+            frequency: float = 10.0,
+            targets: TargetMapping | None = None,
+    ) -> "CorridorBuilder":
+        self._regions.append(
+            CorridorRegion(
+                name=name,
+                start_station=start_station,
+                end_station=end_station,
+                assembly=assembly,
+                frequency=frequency,
+                target_mapping=targets or TargetMapping.empty(),
+            )
+        )
+        return self
 
     def add_baseline(
         self,
@@ -37,7 +60,7 @@ class CorridorBuilder:
         name: str,
         start_station: float,
         end_station: float,
-        assembly_name: str,
+        assembly,
         frequency: float = 10.0,
     ) -> "CorridorBuilder":
         self._regions.append(
@@ -45,7 +68,7 @@ class CorridorBuilder:
                 name=name,
                 start_station=start_station,
                 end_station=end_station,
-                assembly_name=assembly_name,
+                assembly=assembly,
                 frequency=frequency,
             )
         )

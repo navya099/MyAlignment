@@ -26,7 +26,7 @@ class BasicLane(Subassembly):
         if self.side not in (-1, 0, 1):
             raise ValueError(f"side는 -1/0/1: {self.side}")
 
-    def generate_geometry(self):
+    def generate_geometry(self, target_mapping: "TargetMapping | None" = None):
         # 우측 기준 (side=+1)
         start = AssemblyPoint(code=PointCode.CROWN, x=0.0, z=0.0)
         end = AssemblyPoint(

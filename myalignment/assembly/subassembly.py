@@ -20,11 +20,20 @@ class Subassembly(ABC):
     name: str = ""
     side: int = 1  # +1: 우측, -1: 좌측, 0: 중심
 
+    # Target 파라미터 정의 (서브어셈블리별)
+    _target_parameters: tuple[str, ...] = field(default_factory=tuple, repr=False)
+
+    @property
+    def target_parameters(self) -> tuple[str, ...]:
+        """이 서브어셈블리가 사용하는 Target logical_name 목록."""
+        return self._target_parameters
+
     @abstractmethod
-    def generate_geometry(self) -> tuple[tuple[AssemblyPoint, ...], tuple[AssemblyLink, ...]]:
+    def generate_geometry(self, target_mapping: "TargetMapping | None" = None) -> tuple[tuple[AssemblyPoint, ...], tuple[AssemblyLink, ...]]:
         """
         서브어셈블리의 로컬 기하 생성.
-
+        Args:
+            target_mapping: Target 매핑 (없으면 기본값 사용).
         Returns:
             (points, links) — 로컬 좌표계의 접점들 + 연결들.
         """
@@ -35,6 +44,7 @@ class Subassembly(ABC):
             origin_x: float,
             origin_z: float,
             side_sign: int = None,
+            target_mapping: "TargetMapping | None" = None,
     ) -> tuple[tuple[AssemblyPoint, ...], tuple[AssemblyLink, ...]]:
         """
         서브어셈블리를 지정 위치에 배치.
@@ -45,7 +55,7 @@ class Subassembly(ABC):
             side_sign: 방향 (+1: 우측, -1: 좌측). None이면 self.side 사용.
         """
         sign = side_sign if side_sign is not None else self.side
-        points, links = self.generate_geometry()
+        points, links = self.generate_geometry(target_mapping)
 
         placed_points = []
         for p in points:
