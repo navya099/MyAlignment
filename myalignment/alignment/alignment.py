@@ -5,6 +5,7 @@ from cadgeom import Point2d
 
 from myalignment.alignment.alignment_query import AlignmentQuery
 from myalignment.alignment.alignment_transaction import AlignmentTransaction
+from myalignment.corridor.corridor import Corridor
 from myalignment.profile.profile import Profile
 from myalignment.core.projection_result import ProjectionResult
 from myalignment.core.station_offset import StationOffsetPoint
@@ -44,6 +45,7 @@ class Alignment:
         default_factory=SuperelevationCollection
     )
 
+    corridors: tuple[Corridor, ...] = field(default_factory=tuple)
     # ================================================================
     # 기본 속성
     # ================================================================
@@ -222,6 +224,22 @@ class Alignment:
         """측점의 편구배 임계 측점."""
         curve = self.superelevation.curve_at_station(station)
         return curve.critical_station_at(station) if curve else None
+
+    @property
+    def primary_corridor(self) -> Corridor | None:
+        """첫 번째 코리더."""
+        return self.corridors[0] if self.corridors else None
+
+    def corridor_by_name(self, name: str) -> Corridor | None:
+        for c in self.corridors:
+            if c.name == name:
+                return c
+        return None
+
+    def add_corridor(self, corridor: Corridor) -> "Alignment":
+        """새 코리더 추가한 새 선형."""
+        from dataclasses import replace
+        return replace(self, corridors=self.corridors + (corridor,))
     
     # ================================================================
     # Transaction 기반 수정

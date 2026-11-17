@@ -28,6 +28,7 @@ class AlignmentBuilder:
     """
 
     def __init__(self, name: str = "Alignment1"):
+        self._corridors = []
         self._name = name
         self._coords: list[tuple[float, float] | Point2d] = []
         self._radii: list[float | None] = []
@@ -111,6 +112,11 @@ class AlignmentBuilder:
         )
         return self
 
+    def with_corridor(self, corridor) -> "AlignmentBuilder":
+        """코리더 추가 (여러 개 누적 가능)."""
+        self._corridors.append(corridor)
+        return self
+
     def build(self) -> Alignment:
         if not self._coords:
             raise ValueError("PI 좌표가 없습니다.")
@@ -142,4 +148,5 @@ class AlignmentBuilder:
             design_speed=self._design_speed,
             route_type=self._route_type,
             metadata=dict(self._metadata),
+            corridors=self._corridors
         )
