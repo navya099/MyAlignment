@@ -7,8 +7,9 @@ from myalignment.alignment.alignment import Alignment
 from myalignment.enitity.entity_factory import EntityFactory
 from myalignment.enum.spiraltype import SpiralType
 from myalignment.ipdata.ipdata import PIInput
+from myalignment.structure.bridge import Bridge
 from myalignment.structure.structurecollection import StructureCollection
-
+from myalignment.structure.tunnel import Tunnel
 
 
 class AlignmentBuilder:
@@ -83,6 +84,31 @@ class AlignmentBuilder:
 
     def with_metadata(self, **kwargs) -> "AlignmentBuilder":
         self._metadata.update(kwargs)
+        return self
+
+    def with_bridge(
+            self,
+            name: str,
+            start_station: float,
+            end_station: float,
+            **metadata,
+    ) -> "AlignmentBuilder":
+        self._structures = self._structures.add(
+            Bridge.create(name, start_station, end_station, **metadata)
+        )
+        return self
+
+    def with_tunnel(
+            self,
+            name: str,
+            start_station: float,
+            end_station: float,
+            **metadata,
+    ) -> "AlignmentBuilder":
+
+        self._structures = self._structures.add(
+            Tunnel.create(name, start_station, end_station, **metadata)
+        )
         return self
 
     def build(self) -> Alignment:

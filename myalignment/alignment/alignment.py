@@ -12,6 +12,7 @@ from myalignment.enitity.alignment_entity import AlignmentEntity
 from myalignment.enitity.entity_collection import AlignmentEntityCollection
 from myalignment.profile.profiletype import ProfileType
 from myalignment.structure.structurecollection import StructureCollection
+from myalignment.structure.struturetype import StructureType
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,22 +164,50 @@ class Alignment:
         fg = self.fg_profile
         return fg.max_abs_slope if fg else 0.0
 
-    # ================================================================
-    # Structure 조회
-    # ================================================================
+    # ---- Structure 조회 ----
     @property
     def bridge_count(self) -> int:
-        return len(self.structures.get_by_type('교량'))
+        return self.structures.bridge_count
 
     @property
     def tunnel_count(self) -> int:
-        return len(self.structures.get_by_type('터널'))
+        return self.structures.tunnel_count
 
     @property
+    def total_bridge_length(self) -> float:
+        return self.structures.total_bridge_length
+
+    @property
+    def total_tunnel_length(self) -> float:
+        return self.structures.total_tunnel_length
+
+    def structure_type_at(self, station: float) -> StructureType | None:
+        """주어진 측점의 구조물 타입 (None = 토공)."""
+        return self.structures.structure_type_at(station)
+
+    def structure_at(self, station: float):
+        """주어진 측점의 구조물."""
+        return self.structures.find_at_station(station)
+
+    # ---- 공사비 (확장) ----
+    @property
     def cost(self) -> float:
-        """공사비 (구조물 + 토공, 미구현)."""
-        # TODO: 구조물별 단가 적용
-        return 0.0
+        """
+        공사비 (구조물 + 토공).
+
+        현재는 구조물만 계산. 토공/포장은 별도 모듈.
+        """
+        bridge_cost = self.total_bridge_length * self._bridge_unit_cost()
+        tunnel_cost = self.total_tunnel_length * self._tunnel_unit_cost()
+        return bridge_cost + tunnel_cost
+
+    def _bridge_unit_cost(self) -> float:
+        """교량 단가 (원/m) — metadata 또는 기본값."""
+        return float(self.metadata.get('bridge_unit_cost', 5_000_000))
+
+    def _tunnel_unit_cost(self) -> float:
+        """터널 단가 (원/m)."""
+        return float(self.metadata.get('tunnel_unit_cost', 10_000_000))
 
     # ================================================================
     # Transaction 기반 수정

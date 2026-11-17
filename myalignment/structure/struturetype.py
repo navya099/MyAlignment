@@ -1,15 +1,12 @@
+# structure/structure_type.py
 from enum import Enum
 
+
 class StructureType(Enum):
-    """
-    구조물 타입 정의 구조체
-    Attributes:
-        Earth: 토공
-        Bridge: 교량
-        Tunnel: 터널
-        NONE: 미정의
-    """
-    Earth = 0
-    Bridge = 1
-    Tunnel = 2
-    NONE = 3
+    """구조물 종류 (C3D 호환)."""
+    BRIDGE = "교량"
+    TUNNEL = "터널"
+    CULVERT = "암거"
+    RETAINING_WALL = "옹벽"
+    OVERPASS = "과선교"
+    UNDERPASS = "지하차도"
