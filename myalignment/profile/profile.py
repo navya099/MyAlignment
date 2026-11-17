@@ -1,84 +1,180 @@
-from .profileentitycollection import ProfileEntityCollection
-from .profilepvicollection import ProfilePVICollection
+# profile/profile.py
+from __future__ import annotations
+from dataclasses import dataclass, field, replace
+import math
+
+from myalignment.profile.profile_asymmetric_parabola import ProfileAsymmetricParabola
+from myalignment.profile.profile_symmetric_parabola import ProfileSymmetricParabola
+from myalignment.profile.profileentity import ProfileEntity
+from myalignment.profile.profileentitycollection import ProfileEntityCollection
+from myalignment.profile.profiletangent import ProfileTangent
+from myalignment.profile.profiletype import ProfileType
 
 
+@dataclass(frozen=True, slots=True)
 class Profile:
     """
-    A record of elevation against distance along a horizontal Alignment or other line. Profiles are used to visualize the terrain along a route of interest, such as a proposed road, or simply to show how the elevation changes across a particular region.
+    종단 프로파일 (C3D 호환).
+
+    Attributes:
+        name: 프로파일 이름.
+        profile_type: FG(설계선) / EG(현황선).
+        entities: 종단 요소 시퀀스 (불변).
     """
-    def __init__(self, name: str):
-        self.name: str = name
-        self.pvis: ProfilePVICollection = ProfilePVICollection()
-        self.entities: ProfileEntityCollection = ProfileEntityCollection()
+    name: str = "Profile1"
+    profile_type: ProfileType = ProfileType.EG
+    entities: ProfileEntityCollection = field(default_factory=ProfileEntityCollection)
+
+    # ---- 기본 속성 ----
+    @property
+    def start_station(self) -> float:
+        return self.entities.start_station
 
     @property
-    def max_slope(self):
-        gradin = max((pvi.gradein for pvi in self.pvis), default=0.0)
-        gradeout = max((pvi.gradeout for pvi in self.pvis), default=0.0)
-        return max(gradin, gradeout)
+    def end_station(self) -> float:
+        return self.entities.end_station
 
     @property
-    def min_slope(self):
-        gradin = min((pvi.gradein for pvi in self.pvis), default=0.0)
-        gradeout = min((pvi.gradeout for pvi in self.pvis), default=0.0)
-        return min(gradin, gradeout)
+    def length(self) -> float:
+        return self.entities.length
 
     @property
-    def max_elevation(self):
-        return max((pvi.elevation for pvi in self.pvis), default=0.0)
+    def is_valid(self) -> bool:
+        return len(self.entities) > 0
+
+    # ---- 조회 ----
+    def elevation_at(self, station: float) -> float:
+        return self.entities.elevation_at(station)
+
+    def grade_at(self, station: float) -> float:
+        return self.entities.grade_at(station)
+
+    # ---- 집계 ----
+    @property
+    def max_slope(self) -> float:
+        return self.entities.max_grade
 
     @property
-    def min_elevation(self):
-        return min((pvi.elevation for pvi in self.pvis), default=0.0)
+    def min_slope(self) -> float:
+        return self.entities.min_grade
 
     @property
-    def start_station(self):
-        return self.pvis[0].station if self.pvis else 0.0
+    def max_abs_slope(self) -> float:
+        return self.entities.max_abs_grade
 
     @property
-    def end_station(self):
-        return self.pvis[-1].station if self.pvis else 0.0
+    def max_elevation(self) -> float:
+        return self.entities.max_elevation
 
     @property
-    def length(self):
-        return self.end_station - self.start_station if self.pvis else 0.0
+    def min_elevation(self) -> float:
+        return self.entities.min_elevation
 
-    def elevation_at_station(self, station: float) -> float:
-        """
-        특정 측점에서의 고도 반환 (직선 보간 방식)
+    @property
+    def pvi_count(self) -> int:
+        return self.entities.pvi_count
 
-        Args:
-            station (float): 조회할 측점
+    # ---- 불변 변환 ----
+    def reversed(self) -> "Profile":
+        """전체 길이 기준으로 뒤집힌 새 프로파일."""
+        L = self.length
+        return replace(
+            self,
+            entities=ProfileEntityCollection(
+                entities=tuple(
+                    e.reversed(L) for e in reversed(self.entities.entities)
+                )
+            ),
+        )
 
-        Returns:
-            float: 계산된 표고
-        """
-        if not self.pvis:
-            return 0.0
-
-        # 정확히 같은 PVI가 있으면 반환
-        for pvi in self.pvis:
-            if pvi.station == station:
-                return pvi.elevation
-
-        # PVI 정렬 (혹시 정렬 안된 경우)
-        pvis = sorted(self.pvis, key=lambda p: p.station)
-
-        # 범위 밖이면 경계값 반환
-        if station <= pvis[0].station:
-            return pvis[0].elevation
-        if station >= pvis[-1].station:
-            return pvis[-1].elevation
-
-        # 두 PVI 사이에서 직선 보간
-        for i in range(len(pvis) - 1):
-            p1, p2 = pvis[i], pvis[i + 1]
-            if p1.station <= station <= p2.station:
-                ratio = (station - p1.station) / (p2.station - p1.station)
-                return p1.elevation + ratio * (p2.elevation - p1.elevation)
-
-        # 여기까지 오면 논리 오류
-        return 0.0
+    def with_entities(self, entities: ProfileEntityCollection) -> "Profile":
+        return replace(self, entities=entities)
 
 
+# ================================================================
+# 빌더 — 선언적 생성
+# ================================================================
+class ProfileBuilder:
+    """Profile 선언적 빌더."""
 
+    def __init__(
+        self,
+        name: str = "Profile1",
+        profile_type: ProfileType = ProfileType.EG,
+    ):
+        self._name = name
+        self._profile_type = profile_type
+        self._entities: list[ProfileEntity] = []
+
+    def add_tangent(
+            self,
+            start_station: float,
+            end_station: float,
+            start_elevation: float,
+            end_elevation: float,
+    ) -> "ProfileBuilder":
+        self._entities.append(
+            ProfileTangent.create(
+                start_station=start_station,
+                end_station=end_station,
+                start_elevation=start_elevation,
+                end_elevation=end_elevation,
+            )
+        )
+        return self
+
+    def add_symmetric_parabola(
+            self,
+            pvi_station: float,
+            pvi_elevation: float,
+            grade_in: float,
+            grade_out: float,
+            curve_length: float,
+    ) -> "ProfileBuilder":
+        self._entities.append(
+            ProfileSymmetricParabola.create(
+                pvi_station=pvi_station,
+                pvi_elevation=pvi_elevation,
+                grade_in=grade_in,
+                grade_out=grade_out,
+                curve_length=curve_length,
+            )
+        )
+        return self
+
+    def add_asymmetric_parabola(
+            self,
+            pvi_station: float,
+            pvi_elevation: float,
+            grade_in: float,
+            grade_out: float,
+            length_in: float,
+            length_out: float,
+    ) -> "ProfileBuilder":
+        self._entities.append(
+            ProfileAsymmetricParabola.create(
+                pvi_station=pvi_station,
+                pvi_elevation=pvi_elevation,
+                grade_in=grade_in,
+                grade_out=grade_out,
+                length_in=length_in,
+                length_out=length_out,
+            )
+        )
+        return self
+
+    def build(self, validate_grades: bool = False) -> Profile:
+        col = ProfileEntityCollection(entities=tuple(self._entities))
+        if validate_grades:
+            for i in range(len(col) - 1):
+                a, b = col[i], col[i + 1]
+                if not math.isclose(a.end_grade, b.start_grade, abs_tol=1e-6):
+                    raise ValueError(
+                        f"구배 불연속: Entity[{i}].end_grade={a.end_grade} ≠ "
+                        f"Entity[{i+1}].start_grade={b.start_grade}"
+                    )
+        return Profile(
+            name=self._name,
+            profile_type=self._profile_type,
+            entities=col,
+        )

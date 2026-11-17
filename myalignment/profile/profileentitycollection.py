@@ -1,59 +1,134 @@
-from .profileentity import ProfileEntity
+# profile/profile_entity_collection.py
+from __future__ import annotations
+from dataclasses import dataclass, field
+import math
+
+from myalignment.profile.profileentity import ProfileEntity
 
 
-class ProfileEntityCollection(list):
-    """
-    The ProfileEntity collection class. This class represents the collection of all ProfileEntity objects that belong to the Profile.
-    """
-    def __init__(self):
-        super().__init__()
+@dataclass(frozen=True, slots=True)
+class ProfileEntityCollection:
+    """종단 요소 시퀀스 (불변, station/표고 연속 보장)."""
+    entities: tuple[ProfileEntity, ...] = field(default_factory=tuple)
 
-    def append(self, entity: ProfileEntity):
-        super().append(entity)
-        self._update_prev_next_entity_id()
+    def __post_init__(self):
+        self._validate_continuity()
 
-    def insert(self, index: int, entity: ProfileEntity):
-        super().insert(index, entity)
-        self._update_prev_next_entity_id()
+    def _validate_continuity(self):
+        for i in range(len(self.entities) - 1):
+            a, b = self.entities[i], self.entities[i + 1]
+            if not math.isclose(a.end_station, b.start_station, abs_tol=1e-6):
+                raise ValueError(
+                    f"Entity[{i}] end_sta({a.end_station}) ≠ "
+                    f"Entity[{i+1}] start_sta({b.start_station})"
+                )
+            if not math.isclose(a.end_elevation, b.start_elevation, abs_tol=1e-6):
+                raise ValueError(
+                    f"Entity[{i}] end_elev({a.end_elevation}) ≠ "
+                    f"Entity[{i+1}] start_elev({b.start_elevation})"
+                )
 
     @property
-    def firstentity(self) -> int | None:
-        if self:
-            return self[0].entity_id
-        return None  # 컬렉션이 비어있으면 None 반환
+    def start_station(self) -> float:
+        return self.entities[0].start_station if self.entities else 0.0
 
     @property
-    def lastentity(self) -> int | None:
-        if self:
-            return self[-1].entity_id
-        return None
+    def end_station(self) -> float:
+        return self.entities[-1].end_station if self.entities else 0.0
 
-    def entity_at_id(self, entity_id: int) -> ProfileEntity | None:
-        for entity in self:
-            if entity.entity_id == entity_id:
-                return entity
-        raise ValueError("해당 ID의 엔티티가 존재하지 않습니다.")
+    @property
+    def length(self) -> float:
+        return self.end_station - self.start_station if self.entities else 0.0
 
-    def remove(self, entity: ProfileEntity):
-        """Remove a ProfileEntity from the collection."""
-        super().remove(entity)
-        self._update_prev_next_entity_id()
+    def __len__(self) -> int:
+        return len(self.entities)
 
-    def remove_at_index(self, index: int):
-        """Remove a ProfileEntity at a given index from the collection."""
-        del self[index]
-        self._update_prev_next_entity_id()
+    def __iter__(self):
+        return iter(self.entities)
 
-    #비공개 메소드
-    def _update_prev_next_entity_id(self):
-        """각 entity의 이전/다음 entity ID를 자동 계산"""
-        n = len(self)
-        for i, entity in enumerate(self):
-            entity.prev_entity = self[i - 1].entity_id if i > 0 else None
-            entity.next_entity = self[i + 1].entity_id if i < n - 1 else None
+    def __getitem__(self, idx):
+        return self.entities[idx]
 
+    # ---- 조회 ----
+    def entity_at_station(self, station: float) -> ProfileEntity:
+        for e in self.entities:
+            if e.contains_station(station):
+                return e
+        raise ValueError(f"station {station}이 Profile 범위 밖")
 
+    def elevation_at(self, station: float) -> float:
+        return self.entity_at_station(station).elevation_at(station)
 
+    def grade_at(self, station: float) -> float:
+        return self.entity_at_station(station).grade_at(station)
 
+    # ---- 집계 ----
+    @property
+    def max_grade(self) -> float:
+        grades = [e.start_grade for e in self.entities] + \
+                 [e.end_grade for e in self.entities]
+        return max(grades) if grades else 0.0
 
+    @property
+    def min_grade(self) -> float:
+        grades = [e.start_grade for e in self.entities] + \
+                 [e.end_grade for e in self.entities]
+        return min(grades) if grades else 0.0
 
+    @property
+    def max_abs_grade(self) -> float:
+        grades = [abs(e.start_grade) for e in self.entities] + \
+                 [abs(e.end_grade) for e in self.entities]
+        return max(grades) if grades else 0.0
+
+    @property
+    def max_elevation(self) -> float:
+        """프로파일 전체 최대 표고 (파라볼라 내부 극값 포함)."""
+        if not self.entities:
+            return 0.0
+        candidates: list[float] = []
+        for e in self.entities:
+            candidates.append(e.start_elevation)
+            candidates.append(e.end_elevation)
+            ext = getattr(e, "extremum_station", None)
+            if callable(ext):
+                sta = ext()
+                if sta is not None:
+                    candidates.append(e.elevation_at(sta))
+        return max(candidates)
+
+    @property
+    def min_elevation(self) -> float:
+        """프로파일 전체 최소 표고 (파라볼라 내부 극값 포함)."""
+        if not self.entities:
+            return 0.0
+        candidates: list[float] = []
+        for e in self.entities:
+            candidates.append(e.start_elevation)
+            candidates.append(e.end_elevation)
+            ext = getattr(e, "extremum_station", None)
+            if callable(ext):
+                sta = ext()
+                if sta is not None:
+                    candidates.append(e.elevation_at(sta))
+        return min(candidates)
+
+    @property
+    def pvi_count(self) -> int:
+        """
+        PVI(구배 변화점) 개수.
+        - 파라볼라: 내부 PVI 1개
+        - 인접 엔티티 경계 중 구배가 실제로 변하는 지점: PVI
+        """
+        if not self.entities:
+            return 0
+        stations: set[float] = set()
+        for e in self.entities:
+            getter = getattr(e, "pvi_stations", None)
+            if callable(getter):
+                stations.update(getter())
+        for i in range(len(self.entities) - 1):
+            a, b = self.entities[i], self.entities[i + 1]
+            if not math.isclose(a.end_grade, b.start_grade, abs_tol=1e-9):
+                stations.add(a.end_station)
+        return len(stations)
