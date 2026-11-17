@@ -2,6 +2,8 @@
 # 빌더 — 선언적 Alignment 생성
 # ================================================================
 from cadgeom import Point2d
+
+from myalignment.corridor.corridor import Corridor
 from myalignment.profile.profile import Profile
 from myalignment.alignment.alignment import Alignment
 from myalignment.enitity.entity_factory import EntityFactory
@@ -10,6 +12,7 @@ from myalignment.ipdata.ipdata import PIInput
 from myalignment.structure.bridge import Bridge
 from myalignment.structure.structurecollection import StructureCollection
 from myalignment.structure.tunnel import Tunnel
+from myalignment.superelevation.collection import SuperelevationCollection
 
 
 class AlignmentBuilder:
@@ -28,7 +31,8 @@ class AlignmentBuilder:
     """
 
     def __init__(self, name: str = "Alignment1"):
-        self._corridors = []
+        self._superelevation_curves = SuperelevationCollection()
+        self._corridors: list[Corridor] = []
         self._name = name
         self._coords: list[tuple[float, float] | Point2d] = []
         self._radii: list[float | None] = []
@@ -72,8 +76,18 @@ class AlignmentBuilder:
         return self
 
     def with_structure(self, structure) -> "AlignmentBuilder":
-        self._structures.append(structure)
+        self._structures = self._structures.add(structure)
         return self
+
+    def with_bridge(self, name, start_station, end_station, **metadata):
+        return self.with_structure(
+            Bridge.create(name, start_station, end_station, **metadata)
+        )
+
+    def with_tunnel(self, name, start_station, end_station, **metadata):
+        return self.with_structure(
+            Tunnel.create(name, start_station, end_station, **metadata)
+        )
 
     def with_design_speed(self, speed: float) -> "AlignmentBuilder":
         self._design_speed = speed
@@ -87,29 +101,9 @@ class AlignmentBuilder:
         self._metadata.update(kwargs)
         return self
 
-    def with_bridge(
-            self,
-            name: str,
-            start_station: float,
-            end_station: float,
-            **metadata,
-    ) -> "AlignmentBuilder":
-        self._structures = self._structures.add(
-            Bridge.create(name, start_station, end_station, **metadata)
-        )
-        return self
-
-    def with_tunnel(
-            self,
-            name: str,
-            start_station: float,
-            end_station: float,
-            **metadata,
-    ) -> "AlignmentBuilder":
-
-        self._structures = self._structures.add(
-            Tunnel.create(name, start_station, end_station, **metadata)
-        )
+    def with_superelevation_curve(self, curve) -> "AlignmentBuilder":
+        """편구배 곡선 추가 (여러 개 누적 가능)."""
+        self._superelevation_curves= self._superelevation_curves.add(curve)
         return self
 
     def with_corridor(self, corridor) -> "AlignmentBuilder":
@@ -148,5 +142,6 @@ class AlignmentBuilder:
             design_speed=self._design_speed,
             route_type=self._route_type,
             metadata=dict(self._metadata),
-            corridors=self._corridors
+            corridors=self._corridors,
+            superelevation=self._superelevation_curves,
         )

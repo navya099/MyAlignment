@@ -45,7 +45,7 @@ class Alignment:
         default_factory=SuperelevationCollection
     )
 
-    corridors: tuple[Corridor, ...] = field(default_factory=tuple)
+    corridors: list[Corridor] = field(default_factory=list)
     # ================================================================
     # 기본 속성
     # ================================================================
@@ -240,7 +240,7 @@ class Alignment:
         """새 코리더 추가한 새 선형."""
         from dataclasses import replace
         return replace(self, corridors=self.corridors + (corridor,))
-    
+
     # ================================================================
     # Transaction 기반 수정
     # ================================================================

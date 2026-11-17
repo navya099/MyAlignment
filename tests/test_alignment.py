@@ -135,9 +135,7 @@ def test_reversed_alignment():
 
 def test_profile_integration():
 
-
-    fg = Profile("FG")
-    fg.profile_type = ProfileType.FG
+    fg = Profile(name="FG", profile_type=ProfileType.FG)
 
     a = (
         AlignmentBuilder()
@@ -152,7 +150,7 @@ def test_profile_integration():
 
 def test_structure_integration():
 
-    bridge = Bridge("교량1", 50, 150)
+    bridge = Bridge.create("교량1", 50, 150)
     a = (
         AlignmentBuilder()
         .with_pi_coords([(0, 0), (200, 0)])
