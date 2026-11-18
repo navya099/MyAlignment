@@ -1,5 +1,9 @@
 # surface/tin_surface_builder.py
 from __future__ import annotations
+
+from myalignment.surface.boundary import Boundary
+from myalignment.surface.boundary_set import BoundarySet
+from myalignment.surface.boundary_type import BoundaryType
 from myalignment.surface.tin_surface import TinSurface
 from myalignment.surface.tin_point import TinPoint
 
@@ -9,6 +13,7 @@ class TinSurfaceBuilder:
     def __init__(self, name: str = "Surface1"):
         self._name = name
         self._points: list[TinPoint] = []
+        self._boundaries: list[Boundary] = []
 
     def add_point(self, x: float, y: float, z: float) -> "TinSurfaceBuilder":
         self._points.append(TinPoint(x, y, z))
@@ -35,7 +40,47 @@ class TinSurfaceBuilder:
                 self._points.append(TinPoint(x, y, z))
         return self
 
+    # ---- Boundary 추가 ----
+    def add_outer_boundary(self, boundary: Boundary) -> "TinSurfaceBuilder":
+        """외곽 경계 추가."""
+        from dataclasses import replace
+        self._boundaries.append(
+            Boundary(
+                name=boundary.name,
+                boundary_type=BoundaryType.OUTER,
+                vertices=boundary.vertices,
+            )
+        )
+        return self
+
+    def add_hide_boundary(self, boundary: Boundary) -> "TinSurfaceBuilder":
+        """구멍 추가."""
+        self._boundaries.append(
+            Boundary(
+                name=boundary.name,
+                boundary_type=BoundaryType.HIDE,
+                vertices=boundary.vertices,
+            )
+        )
+        return self
+
+    def add_show_boundary(self, boundary: Boundary) -> "TinSurfaceBuilder":
+        """표시 영역 추가."""
+        self._boundaries.append(
+            Boundary(
+                name=boundary.name,
+                boundary_type=BoundaryType.SHOW,
+                vertices=boundary.vertices,
+            )
+        )
+        return self
+
     def build(self) -> TinSurface:
         if len(self._points) < 3:
             raise ValueError(f"TIN은 ≥ 3점 필요: {len(self._points)}")
-        return TinSurface.from_points(self._points, name=self._name)
+        bset = BoundarySet(boundaries=tuple(self._boundaries)) if self._boundaries else None
+        return TinSurface.from_points(
+            self._points,
+            name=self._name,
+            boundaries=bset,
+        )
