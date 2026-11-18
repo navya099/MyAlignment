@@ -71,27 +71,25 @@ class Boundary:
         min_x, min_y, max_x, max_y = self._bbox_cache  # type: ignore[misc]
         return min_x <= x <= max_x and min_y <= y <= max_y
 
-    def contains_point(self, x: float, y: float) -> bool:
-        """
-        점 (x, y)가 폴리곤 내부에 있는지 (Ray casting).
-
-        경계 위 점은 "내부"로 처리.
-        """
+    def contains_point(self, x, y):
         n = len(self.vertices)
         inside = False
         j = n - 1
         for i in range(n):
             vi = self.vertices[i]
             vj = self.vertices[j]
-            if self._on_segment(vi, vj, x, y):
-                return True
             if (vi.y > y) != (vj.y > y):
-                x_intersect = (
-                    (vj.x - vi.x) * (y - vi.y) / (vj.y - vi.y) + vi.x
-                )
+                x_intersect = (vj.x - vi.x) * (y - vi.y) / (vj.y - vi.y) + vi.x
                 if x < x_intersect:
                     inside = not inside
             j = i
+        # 경계 위 점 보정 (선택)
+        if not inside:
+            for i in range(n):
+                vi = self.vertices[i]
+                vj = self.vertices[(i + 1) % n]
+                if self._on_segment(vi, vj, x, y):
+                    return True
         return inside
 
     @staticmethod
