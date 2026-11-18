@@ -4,24 +4,37 @@ from __future__ import annotations
 from myalignment.surface.boundary import Boundary
 from myalignment.surface.boundary_set import BoundarySet
 from myalignment.surface.boundary_type import BoundaryType
-from myalignment.surface.tin_surface import TinSurface
+from myalignment.surface.delaunay import DelaunayTriangulator
 from myalignment.surface.tin_point import TinPoint
+from myalignment.surface.tin_surface import TinSurface
+from myalignment.surface.triangle import Triangle
+
+from dataclasses import replace
 
 
 class TinSurfaceBuilder:
     """TinSurface 선언적 빌더."""
+
     def __init__(self, name: str = "Surface1"):
         self._name = name
         self._points: list[TinPoint] = []
-        self._boundaries: list[Boundary] = []
+        self._outer_boundaries: list[Boundary] = []
+        self._hide_boundaries: list[Boundary] = []
+        # add_grid로 생성된 경우 격자 정보 저장 (정형 삼각분할용)
+        self._grid_info: tuple[int, int] | None = None
 
+    # ---- 점 추가 ----
     def add_point(self, x: float, y: float, z: float) -> "TinSurfaceBuilder":
         self._points.append(TinPoint(x, y, z))
+        self._grid_info = None   # 임의 점 추가 시 격자 정보 무효화
         return self
 
-    def add_points(self, points: list[tuple[float, float, float]]) -> "TinSurfaceBuilder":
+    def add_points(
+        self, points: list[tuple[float, float, float]]
+    ) -> "TinSurfaceBuilder":
         for x, y, z in points:
             self._points.append(TinPoint(x, y, z))
+        self._grid_info = None
         return self
 
     def add_grid(
@@ -31,56 +44,95 @@ class TinSurfaceBuilder:
         nx: int, ny: int,
         elevation_func,
     ) -> "TinSurfaceBuilder":
-        """격자점 생성 (elevation_func(x, y) → z)."""
+        """
+        격자점 생성 (elevation_func(x, y) → z).
+
+        주의: add_grid는 격자 정보를 저장하여 build()에서
+        정형 삼각분할(O(N))을 사용한다. add_point/add_points와
+        혼용하면 격자 정보가 무효화되어 들로네 삼각분할로 폴백한다.
+        """
+        if nx < 2 or ny < 2:
+            raise ValueError(f"격자 크기 ≥ 2 필요: nx={nx}, ny={ny}")
         for i in range(nx):
             for j in range(ny):
                 x = x_min + (x_max - x_min) * i / (nx - 1)
                 y = y_min + (y_max - y_min) * j / (ny - 1)
                 z = elevation_func(x, y)
                 self._points.append(TinPoint(x, y, z))
+        self._grid_info = (nx, ny)
         return self
 
-    # ---- Boundary 추가 ----
+    # ---- 경계 추가 ----
     def add_outer_boundary(self, boundary: Boundary) -> "TinSurfaceBuilder":
-        """외곽 경계 추가."""
-        from dataclasses import replace
-        self._boundaries.append(
-            Boundary(
-                name=boundary.name,
-                boundary_type=BoundaryType.OUTER,
-                vertices=boundary.vertices,
-            )
-        )
+        self._outer_boundaries.append(boundary)
         return self
 
     def add_hide_boundary(self, boundary: Boundary) -> "TinSurfaceBuilder":
-        """구멍 추가."""
-        self._boundaries.append(
-            Boundary(
-                name=boundary.name,
-                boundary_type=BoundaryType.HIDE,
-                vertices=boundary.vertices,
-            )
-        )
+        self._hide_boundaries.append(boundary)
         return self
 
-    def add_show_boundary(self, boundary: Boundary) -> "TinSurfaceBuilder":
-        """표시 영역 추가."""
-        self._boundaries.append(
-            Boundary(
-                name=boundary.name,
-                boundary_type=BoundaryType.SHOW,
-                vertices=boundary.vertices,
-            )
-        )
-        return self
+    from dataclasses import replace
+    from myalignment.surface.boundary_type import BoundaryType
 
     def build(self) -> TinSurface:
         if len(self._points) < 3:
             raise ValueError(f"TIN은 ≥ 3점 필요: {len(self._points)}")
-        bset = BoundarySet(boundaries=tuple(self._boundaries)) if self._boundaries else None
-        return TinSurface.from_points(
-            self._points,
-            name=self._name,
-            boundaries=bset,
+
+        # 타입 강제 (호출자 기본값 무관)
+        outer = tuple(
+            replace(b, boundary_type=BoundaryType.OUTER)
+            for b in self._outer_boundaries
         )
+
+        hide = tuple(
+            replace(b, boundary_type=BoundaryType.HIDE)
+            for b in self._hide_boundaries
+        )
+        boundaries = BoundarySet(boundaries=outer + hide)
+
+        # 격자면 정형 삼각분할 (O(N))
+        if self._grid_info is not None:
+            nx, ny = self._grid_info
+            if len(self._points) != nx * ny:
+                triangles = DelaunayTriangulator.triangulate(list(self._points))
+            else:
+                triangles = self._build_grid_triangles(nx, ny)
+        else:
+            triangles = DelaunayTriangulator.triangulate(list(self._points))
+
+        # 경계 필터
+        if len(boundaries) > 0:
+            filtered: list[Triangle] = []
+            pts = self._points
+            for tri in triangles:
+                p1 = pts[tri.a]
+                p2 = pts[tri.b]
+                p3 = pts[tri.c]
+                cx = (p1.x + p2.x + p3.x) / 3.0
+                cy = (p1.y + p2.y + p3.y) / 3.0
+                if boundaries.contains_point(cx, cy):
+                    filtered.append(tri)
+            triangles = filtered
+
+        return TinSurface(
+            name=self._name,
+            points=tuple(self._points),
+            triangles=tuple(triangles),
+            boundaries=boundaries,
+        )
+
+    def _build_grid_triangles(self, nx: int, ny: int) -> list[Triangle]:
+        """격자 (nx × ny)를 각 셀당 2개 삼각형으로 정형 분할 (O(N))."""
+        triangles: list[Triangle] = []
+        for j in range(ny - 1):
+            base_j = j * nx
+            base_j1 = (j + 1) * nx
+            for i in range(nx - 1):
+                a = base_j + i
+                b = base_j + (i + 1)
+                c = base_j1 + (i + 1)
+                d = base_j1 + i
+                # 대각선 (a, c)로 분할
+                triangles.append(Triangle(*sorted((a, b, c))))
+                triangles.append(Triangle(*sorted((a, c, d))))
+        return triangles
