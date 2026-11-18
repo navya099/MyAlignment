@@ -12,6 +12,7 @@ from myalignment.core.station_offset import StationOffsetPoint
 from myalignment.enitity.alignment_entity import AlignmentEntity
 from myalignment.enitity.entity_collection import AlignmentEntityCollection
 from myalignment.profile.profiletype import ProfileType
+from myalignment.quantity.takeoff import TakeoffResult, QuantityTakeoff
 from myalignment.structure.structurecollection import StructureCollection
 from myalignment.structure.struturetype import StructureType
 from myalignment.superelevation.collection import SuperelevationCollection
@@ -247,3 +248,20 @@ class Alignment:
     def modify(self) -> "AlignmentTransaction":
         """트랜잭션 시작."""
         return AlignmentTransaction(self)
+
+    @property
+    def quantity_takeoff(self) -> TakeoffResult | None:
+        """
+        코리더의 수량 산출.
+
+        재료 정보는 metadata에 저장:
+            metadata['materials'] = [...]
+        """
+        if not self.corridors:
+            return None
+        corridor = self.primary_corridor
+        regions = list(corridor.regions)
+        materials = self.metadata.get('materials', [])
+
+        qto = QuantityTakeoff(materials=materials)
+        return qto.compute(corridor, regions)
