@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import replace
 
+from myalignment.featureline.feature_line import FeatureLine
 from myalignment.surface.boundary import Boundary
 from myalignment.surface.boundary_set import BoundarySet
 from myalignment.surface.boundary_type import BoundaryType
@@ -173,3 +174,12 @@ class TinSurfaceBuilder:
                 triangles.append(Triangle(*sorted((a, b, c))))
                 triangles.append(Triangle(*sorted((a, c, d))))
         return triangles
+
+    def add_feature_line_as_breakline(
+            self,
+            fl: FeatureLine,
+            breakline_type: BreaklineType = BreaklineType.STANDARD,
+    ) -> "TinSurfaceBuilder":
+        """FeatureLine을 Breakline으로 추가."""
+        self._breaklines.append(fl.to_breakline(breakline_type))
+        return self

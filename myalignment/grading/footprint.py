@@ -5,6 +5,8 @@ import math
 
 from cadgeom import Point2d
 
+from myalignment.featureline.feature_line import FeatureLine
+
 
 @dataclass(frozen=True, slots=True)
 class FootprintVertex:
@@ -34,6 +36,20 @@ class Footprint:
         if len(self.vertices) < 2:
             raise ValueError(f"발자국 ≥ 2점 필요: {len(self.vertices)}")
 
+    @classmethod
+    def from_feature_line(
+            cls,
+            fl: FeatureLine,
+            name: str = "",
+    ) -> "Footprint":
+        """FeatureLine → Footprint 변환."""
+        return cls(
+            name=name or fl.name,
+            vertices=tuple(
+                FootprintVertex(v.x, v.y, v.z) for v in fl.vertices
+            ),
+            is_closed=fl.is_closed,
+        )
     @property
     def length(self) -> float:
         total = 0.0
