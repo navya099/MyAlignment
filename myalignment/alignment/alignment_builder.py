@@ -9,6 +9,7 @@ from myalignment.alignment.alignment import Alignment
 from myalignment.enitity.entity_factory import EntityFactory
 from myalignment.enum.spiraltype import SpiralType
 from myalignment.ipdata.ipdata import PIInput
+from myalignment.rail.rail_alignment import RailAlignment
 from myalignment.structure.bridge import Bridge
 from myalignment.structure.structurecollection import StructureCollection
 from myalignment.structure.tunnel import Tunnel
@@ -46,6 +47,10 @@ class AlignmentBuilder:
         self._design_speed = 0.0
         self._route_type = ""
         self._metadata: dict = {}
+
+        self._is_rail = False
+        self._gauge = 1.435
+        self._cant_curves: list = []
 
     def with_pi_coords(self, coords) -> "AlignmentBuilder":
         self._coords = list(coords)
@@ -111,7 +116,7 @@ class AlignmentBuilder:
         self._corridors.append(corridor)
         return self
 
-    def build(self) -> Alignment:
+    def build(self) -> Alignment | RailAlignment:
         if not self._coords:
             raise ValueError("PI 좌표가 없습니다.")
         if not self._radii:
@@ -134,6 +139,24 @@ class AlignmentBuilder:
         )
         entities = EntityFactory.build(pi_input)
 
+        # 철도 선형 모드인 경우 RailAlignment 반환
+        if self._is_rail:
+            return RailAlignment(
+                name=self._name,
+                entities=entities,
+                profiles=tuple(self._profiles),
+                structures=self._structures,
+                design_speed=self._design_speed,
+                route_type=self._route_type,
+                metadata=dict(self._metadata),
+                corridors=self._corridors,
+                superelevation=self._superelevation_curves,
+                is_rail=True,
+                gauge=self._gauge,
+                cant_curves=tuple(self._cant_curves),
+            )
+
+        # 일반 Alignment 반환
         return Alignment(
             name=self._name,
             entities=entities,
@@ -145,3 +168,16 @@ class AlignmentBuilder:
             corridors=self._corridors,
             superelevation=self._superelevation_curves,
         )
+
+    def as_rail_alignment(self, gauge: float = 1.435, cant_curves=None) -> "AlignmentBuilder":
+        """철도 선형 빌드 모드로 설정합니다 (체이닝 유지)."""
+        self._is_rail = True
+        self._gauge = gauge
+        if cant_curves:
+            self._cant_curves.extend(cant_curves)
+        return self
+
+    def with_cant_curve(self, curve) -> "AlignmentBuilder":
+        """빌더 단계에서 캔트 커브 추가"""
+        self._cant_curves.append(curve)
+        return self
