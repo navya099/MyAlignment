@@ -19,7 +19,7 @@ class Subassembly(ABC):
     """
     name: str = ""
     side: int = 1  # +1: 우측, -1: 좌측, 0: 중심
-
+    apply_aor: bool = False  # 캔트 적용 여부
     # Target 파라미터 정의 (서브어셈블리별)
     _target_parameters: tuple[str, ...] = field(default_factory=tuple, repr=False)
 
