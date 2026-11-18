@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 import math
+from enum import Enum
 
 from myalignment.assembly.codes import PointCode
 
@@ -15,7 +16,7 @@ class AssemblyPoint:
     - x: 기준점에서 우측(+)/좌측(-)
     - z: 기준점 표고 대비
     """
-    code: PointCode = PointCode.EDGE
+    code: Enum = field(default=None)  # 도로/철도 등 모든 종류의 Code Enum 허용
     x: float = 0.0  # 횡방향 (m)
     z: float = 0.0  # 표고차 (m)
     is_parametric: bool = False

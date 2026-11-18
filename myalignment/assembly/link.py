@@ -1,7 +1,8 @@
 # assembly/link.py
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
+from enum import Enum
 
 from myalignment.assembly.codes import LinkCode, ShapeCode
 from myalignment.assembly.point import AssemblyPoint
@@ -14,7 +15,7 @@ class AssemblyLink:
 
     포장면/사면/배수로 등의 선분.
     """
-    code: LinkCode = LinkCode.TOP
+    code: Enum = field(default=None)  # 도로/철도 등 모든 종류의 Code Enum 허용
     start: AssemblyPoint = None
     end: AssemblyPoint = None
     shape_code: ShapeCode | None = None  # 형상(면적) 코드 (재료 물량)
