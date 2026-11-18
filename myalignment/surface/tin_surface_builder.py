@@ -111,12 +111,21 @@ class TinSurfaceBuilder:
         #   2) 격자 → 정형 분할 (O(N))
         #   3) 그 외 → scipy.Delaunay / 폴백
         if len(blset) > 0:
-            triangles_list, all_points = (
-                ConstrainedDelaunayTriangulator.triangulate(
-                    list(self._points), list(blset.breaklines)
-                )
-            )
-            points = tuple(all_points)
+            # Breakline 정점을 점 집합에 병합
+            all_points = list(self._points)
+            for bl in blset.breaklines:
+                for v in bl.vertices:
+                    all_points.append(TinPoint(v.x, v.y, v.z))
+            # 중복 제거
+            seen = set()
+            unique = []
+            for p in all_points:
+                key = (round(p.x, 6), round(p.y, 6))
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(p)
+            triangles_list = _triangulate(tuple(unique))
+            points = tuple(unique)
         elif self._grid_info is not None:
             nx, ny = self._grid_info
             if len(self._points) != nx * ny:

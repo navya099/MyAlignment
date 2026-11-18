@@ -13,6 +13,8 @@ from myalignment.surface.tin_point import TinPoint
 from myalignment.surface.triangle import Triangle
 from myalignment.surface.delaunay import DelaunayTriangulator
 
+import logging
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class TinSurface:
@@ -347,9 +349,13 @@ class TinSurface:
 try:
     from scipy.spatial import Delaunay as _SciPyDelaunay
     _HAS_SCIPY = True
+    logger.debug("scipy.Delaunay 사용 가능")
 except ImportError:
     _HAS_SCIPY = False
-
+    logger.warning(
+        "scipy 미설치 → Bowyer-Watson 폴백 (대규모 점에서 매우 느림). "
+        "`pip install scipy` 권장."
+    )
 
 def _triangulate(points: tuple[TinPoint, ...]) -> list[Triangle]:
     """점 집합 → 삼각형 리스트. scipy 우선, 폴백 Bowyer-Watson."""
@@ -361,6 +367,7 @@ def _triangulate(points: tuple[TinPoint, ...]) -> list[Triangle]:
                 Triangle(*sorted(map(int, simplex)))
                 for simplex in tri.simplices
             ]
-        except Exception:
-            pass
+        except Exception as e:
+            import warnings
+            warnings.warn(f"scipy Delaunay 실패, 폴백: {e}")
     return DelaunayTriangulator.triangulate(list(points))

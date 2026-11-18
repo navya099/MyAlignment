@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from myalignment.surface.tin_point import TinPoint
+
 from myalignment.surface.triangle import Triangle
 from myalignment.surface.breakline import Breakline
 from myalignment.surface.breakline_type import BreaklineType
@@ -53,7 +54,8 @@ class ConstrainedDelaunayTriangulator:
             breakline_indices.append(indices)
 
         # 2) 표준 Delaunay 삼각분할
-        triangles = DelaunayTriangulator.triangulate(all_points)
+        from myalignment.surface.tin_surface import _triangulate
+        triangles = _triangulate(tuple(points))   # ← delaunay.triangulate 대신
 
         # 3) Breakline을 따라 edge flipping (삼각형 변 강제)
         for bl, indices in zip(breaklines, breakline_indices):
