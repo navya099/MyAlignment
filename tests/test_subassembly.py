@@ -12,13 +12,14 @@ from myalignment.assembly.subassembly import Subassembly
 
 
 def test_basic_lane():
-    lane = BasicLane(width=3.5, slope=-0.02)
+    lane = BasicLane(width=3.5, slope=-0.02, side=+1)
     points, links = lane.generate_geometry()
-
-    assert len(points) == 2
-    assert len(links) == 1
-    assert math.isclose(points[1].x, 3.5)
-    assert math.isclose(points[1].z, -0.02 * 3.5)
+    assert len(points) == 4   # 상단 2 + 포장 하단 2
+    # 상단 점 확인
+    top = [p for p in points if p.code == PointCode.LANE_EDGE]
+    assert len(top) == 2
+    assert math.isclose(top[0].x, 0.0)
+    assert math.isclose(top[1].x, 3.5)
 
 
 def test_shoulder():

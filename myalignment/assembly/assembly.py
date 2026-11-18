@@ -88,8 +88,12 @@ class Assembly:
             links.extend(placed_links)
 
             if placed_points:
-                last = placed_points[-1]
-                current_x = last.x  # ← 수정: side_sign 곱 제거
+                # side_sign 방향으로 가장 먼 점
+                if side_sign > 0:
+                    last = max(placed_points, key=lambda p: p.x)
+                else:
+                    last = min(placed_points, key=lambda p: p.x)
+                current_x = last.x
                 current_z = last.z
 
     @staticmethod

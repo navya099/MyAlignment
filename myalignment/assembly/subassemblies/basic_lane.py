@@ -26,18 +26,44 @@ class BasicLane(Subassembly):
         if self.side not in (-1, 0, 1):
             raise ValueError(f"side는 -1/0/1: {self.side}")
 
-    def generate_geometry(self, target_mapping: "TargetMapping | None" = None):
-        # 우측 기준 (side=+1)
-        start = AssemblyPoint(code=PointCode.CROWN, x=0.0, z=0.0)
-        end = AssemblyPoint(
+    def generate_geometry(self, target_mapping=None):
+        # 차로 상단
+        top_start = AssemblyPoint(code=PointCode.LANE_EDGE, x=0.0, z=0.0)
+        top_end = AssemblyPoint(
             code=PointCode.LANE_EDGE,
             x=self.width,
-            z=self.slope * self.width,
+            z=-self.width * self.slope,
         )
-        link = AssemblyLink(
-            code=LinkCode.PAVEMENT,
-            start=start,
-            end=end,
+        # 포장층 (두께 0.1m 가정)
+        thickness = 0.1
+        bot_end = AssemblyPoint(
+            code=PointCode.PAVEMENT_BOTTOM,
+            x=self.width,
+            z=-self.width * self.slope - thickness,
+        )
+        bot_start = AssemblyPoint(
+            code=PointCode.PAVEMENT_BOTTOM,
+            x=0.0,
+            z=-thickness,
+        )
+        # 링크
+        lane_link = AssemblyLink(code=LinkCode.LANE, start=top_start, end=top_end)
+        pave_top = AssemblyLink(
+            code=LinkCode.PAVEMENT_TOP, start=top_start, end=top_end,
             shape_code=ShapeCode.PAVEMENT,
         )
-        return (start, end), (link,)
+        pave_side_r = AssemblyLink(
+            code=LinkCode.PAVEMENT_SIDE, start=top_end, end=bot_end,
+            shape_code=ShapeCode.PAVEMENT,
+        )
+        pave_bot = AssemblyLink(
+            code=LinkCode.PAVEMENT_BOTTOM, start=bot_end, end=bot_start,
+            shape_code=ShapeCode.PAVEMENT,
+        )
+        pave_side_l = AssemblyLink(
+            code=LinkCode.PAVEMENT_SIDE, start=bot_start, end=top_start,
+            shape_code=ShapeCode.PAVEMENT,
+        )
+        return (top_start, top_end, bot_end, bot_start), (
+            lane_link, pave_top, pave_side_r, pave_bot, pave_side_l,
+        )

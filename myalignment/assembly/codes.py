@@ -5,6 +5,7 @@ from enum import Enum
 class PointCode(Enum):
     """C3D Point 코드 (표준)."""
     # 기준
+    PAVEMENT_BOTTOM = "Pavement_Bottom"
     CENTERLINE = "Centerline"
     BASELINE = "Baseline"
     # 차로
@@ -29,6 +30,10 @@ class PointCode(Enum):
 
 class LinkCode(Enum):
     """C3D Link 코드."""
+    PAVEMENT_SIDE = "Pavement_Side"
+    PAVEMENT_BOTTOM = "Pavement_Bottom"
+    LANE = "Lane"
+    PAVEMENT_TOP = "Pavement_Top"
     PAVEMENT = "Pavement"
     SUBBASE = "Subbase"
     SHOULDER = "Shoulder"
