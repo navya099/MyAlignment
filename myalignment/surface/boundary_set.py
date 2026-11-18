@@ -16,71 +16,98 @@ class BoundarySet:
     - Show/Hide/DataClip은 여러 개.
     """
     boundaries: tuple[Boundary, ...] = field(default_factory=tuple)
+    # 분류 캐시
+    _outer: Boundary | None = field(
+        init=False, repr=False, compare=False, default=None
+    )
+    _hides: tuple[Boundary, ...] = field(
+        init=False, repr=False, compare=False, default=()
+    )
+    _shows: tuple[Boundary, ...] = field(
+        init=False, repr=False, compare=False, default=()
+    )
+    _data_clips: tuple[Boundary, ...] = field(
+        init=False, repr=False, compare=False, default=()
+    )
 
     def __post_init__(self):
-        # Outer 개수 검증
-        outer_count = sum(1 for b in self.boundaries if b.boundary_type == BoundaryType.OUTER)
-        if outer_count > 1:
-            raise ValueError(f"Outer Boundary는 1개만: {outer_count}개")
+        outer = None
+        hides: list[Boundary] = []
+        shows: list[Boundary] = []
+        data_clips: list[Boundary] = []
+        for b in self.boundaries:
+            bt = b.boundary_type
+            if bt == BoundaryType.OUTER:
+                if outer is not None:
+                    raise ValueError("Outer Boundary는 1개만 허용")
+                outer = b
+            elif bt == BoundaryType.HIDE:
+                hides.append(b)
+            elif bt == BoundaryType.SHOW:
+                shows.append(b)
+            elif bt == BoundaryType.DATA_CLIP:
+                data_clips.append(b)
+        object.__setattr__(self, "_outer", outer)
+        object.__setattr__(self, "_hides", tuple(hides))
+        object.__setattr__(self, "_shows", tuple(shows))
+        object.__setattr__(self, "_data_clips", tuple(data_clips))
 
-    # ---- 조회 ----
+    # ---- 분류 (캐시) ----
     @property
     def outer(self) -> Boundary | None:
-        """외곽 경계."""
-        for b in self.boundaries:
-            if b.boundary_type == BoundaryType.OUTER:
-                return b
-        return None
-
-    @property
-    def show_boundaries(self) -> tuple[Boundary, ...]:
-        return tuple(b for b in self.boundaries if b.boundary_type == BoundaryType.SHOW)
+        return self._outer
 
     @property
     def hide_boundaries(self) -> tuple[Boundary, ...]:
-        return tuple(b for b in self.boundaries if b.boundary_type == BoundaryType.HIDE)
+        return self._hides
+
+    @property
+    def show_boundaries(self) -> tuple[Boundary, ...]:
+        return self._shows
 
     @property
     def data_clip_boundaries(self) -> tuple[Boundary, ...]:
-        return tuple(b for b in self.boundaries if b.boundary_type == BoundaryType.DATA_CLIP)
+        return self._data_clips
 
-    # ---- 포함 판정 ----
+    # ---- 포함 판정 (bbox 사전 필터) ----
     def contains_point(self, x: float, y: float) -> bool:
         """
         점 (x, y)가 유효 영역 내부인지.
 
         규칙:
             1. Outer가 있으면: Outer 내부
-            2. Hide Boundary 내부면: False (구멍)
-            3. Show Boundary가 있으면: Show 내부만 True
+            2. Hide 내부면: False (구멍)
+            3. Show가 있으면: Show 내부만 True
             4. 그 외: True
         """
-        # 1) Outer 체크
-        outer = self.outer
-        if outer is not None and not outer.contains_point(x, y):
-            return False
-
-        # 2) Hide Boundary 체크
-        for hide in self.hide_boundaries:
-            if hide.contains_point(x, y):
+        # 1) Outer: bbox → 내부
+        outer = self._outer
+        if outer is not None:
+            if not outer.bbox_contains(x, y):
+                return False
+            if not outer.contains_point(x, y):
                 return False
 
-        # 3) Show Boundary 체크
-        shows = self.show_boundaries
-        if shows:
-            return any(s.contains_point(x, y) for s in shows)
+        # 2) Hide: bbox → 내부
+        for hide in self._hides:
+            if hide.bbox_contains(x, y) and hide.contains_point(x, y):
+                return False
+
+        # 3) Show: bbox → 내부
+        if self._shows:
+            for show in self._shows:
+                if show.bbox_contains(x, y) and show.contains_point(x, y):
+                    return True
+            return False
 
         return True
 
     # ---- 면적 ----
     @property
     def effective_area(self) -> float:
-        """
-        유효 면적 (Outer - Hide + Show).
-        """
-        outer_area = self.outer.area if self.outer else 0.0
-        hide_area = sum(b.area for b in self.hide_boundaries)
-        show_area = sum(b.area for b in self.show_boundaries)
+        outer_area = self._outer.area if self._outer else 0.0
+        hide_area = sum(b.area for b in self._hides)
+        show_area = sum(b.area for b in self._shows)
         return outer_area - hide_area + show_area
 
     # ---- 추가/제거 ----
@@ -101,7 +128,7 @@ class BoundarySet:
     def __repr__(self) -> str:
         return (
             f"BoundarySet(n={len(self.boundaries)}, "
-            f"outer={'Y' if self.outer else 'N'}, "
-            f"hide={len(self.hide_boundaries)}, "
+            f"outer={'Y' if self._outer else 'N'}, "
+            f"hide={len(self._hides)}, "
             f"area={self.effective_area:.2f}m²)"
         )

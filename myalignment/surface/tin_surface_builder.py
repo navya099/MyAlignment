@@ -1,5 +1,6 @@
 # surface/tin_surface_builder.py
 from __future__ import annotations
+from dataclasses import replace
 
 from myalignment.surface.boundary import Boundary
 from myalignment.surface.boundary_set import BoundarySet
@@ -8,8 +9,6 @@ from myalignment.surface.delaunay import DelaunayTriangulator
 from myalignment.surface.tin_point import TinPoint
 from myalignment.surface.tin_surface import TinSurface
 from myalignment.surface.triangle import Triangle
-
-from dataclasses import replace
 
 
 class TinSurfaceBuilder:
@@ -20,13 +19,12 @@ class TinSurfaceBuilder:
         self._points: list[TinPoint] = []
         self._outer_boundaries: list[Boundary] = []
         self._hide_boundaries: list[Boundary] = []
-        # add_grid로 생성된 경우 격자 정보 저장 (정형 삼각분할용)
         self._grid_info: tuple[int, int] | None = None
 
-    # ---- 점 추가 ----
+    # ---- 점 ----
     def add_point(self, x: float, y: float, z: float) -> "TinSurfaceBuilder":
         self._points.append(TinPoint(x, y, z))
-        self._grid_info = None   # 임의 점 추가 시 격자 정보 무효화
+        self._grid_info = None
         return self
 
     def add_points(
@@ -44,13 +42,6 @@ class TinSurfaceBuilder:
         nx: int, ny: int,
         elevation_func,
     ) -> "TinSurfaceBuilder":
-        """
-        격자점 생성 (elevation_func(x, y) → z).
-
-        주의: add_grid는 격자 정보를 저장하여 build()에서
-        정형 삼각분할(O(N))을 사용한다. add_point/add_points와
-        혼용하면 격자 정보가 무효화되어 들로네 삼각분할로 폴백한다.
-        """
         if nx < 2 or ny < 2:
             raise ValueError(f"격자 크기 ≥ 2 필요: nx={nx}, ny={ny}")
         for i in range(nx):
@@ -62,55 +53,55 @@ class TinSurfaceBuilder:
         self._grid_info = (nx, ny)
         return self
 
-    # ---- 경계 추가 ----
+    # ---- 경계 (타입 강제) ----
     def add_outer_boundary(self, boundary: Boundary) -> "TinSurfaceBuilder":
-        self._outer_boundaries.append(boundary)
+        self._outer_boundaries.append(
+            replace(boundary, boundary_type=BoundaryType.OUTER)
+        )
         return self
 
     def add_hide_boundary(self, boundary: Boundary) -> "TinSurfaceBuilder":
-        self._hide_boundaries.append(boundary)
+        self._hide_boundaries.append(
+            replace(boundary, boundary_type=BoundaryType.HIDE)
+        )
         return self
 
-    from dataclasses import replace
-    from myalignment.surface.boundary_type import BoundaryType
-
+    # ---- 빌드 ----
     def build(self) -> TinSurface:
         if len(self._points) < 3:
             raise ValueError(f"TIN은 ≥ 3점 필요: {len(self._points)}")
 
-        # 타입 강제 (호출자 기본값 무관)
-        outer = tuple(
-            replace(b, boundary_type=BoundaryType.OUTER)
-            for b in self._outer_boundaries
+        all_boundaries = (
+            tuple(self._outer_boundaries) + tuple(self._hide_boundaries)
         )
+        boundaries = BoundarySet(boundaries=all_boundaries)
 
-        hide = tuple(
-            replace(b, boundary_type=BoundaryType.HIDE)
-            for b in self._hide_boundaries
-        )
-        boundaries = BoundarySet(boundaries=outer + hide)
-
-        # 격자면 정형 삼각분할 (O(N))
+        # 삼각분할 (격자 → 정형 O(N), 아니면 들로네/scipy)
         if self._grid_info is not None:
             nx, ny = self._grid_info
             if len(self._points) != nx * ny:
-                triangles = DelaunayTriangulator.triangulate(list(self._points))
+                triangles = DelaunayTriangulator.triangulate(
+                    list(self._points)
+                )
             else:
                 triangles = self._build_grid_triangles(nx, ny)
         else:
-            triangles = DelaunayTriangulator.triangulate(list(self._points))
+            triangles = DelaunayTriangulator.triangulate(
+                list(self._points)
+            )
 
-        # 경계 필터
+        # 경계 필터 (bbox 사전 필터 + contains_point)
         if len(boundaries) > 0:
             filtered: list[Triangle] = []
             pts = self._points
+            bset = boundaries
             for tri in triangles:
                 p1 = pts[tri.a]
                 p2 = pts[tri.b]
                 p3 = pts[tri.c]
                 cx = (p1.x + p2.x + p3.x) / 3.0
                 cy = (p1.y + p2.y + p3.y) / 3.0
-                if boundaries.contains_point(cx, cy):
+                if bset.contains_point(cx, cy):
                     filtered.append(tri)
             triangles = filtered
 
@@ -132,7 +123,6 @@ class TinSurfaceBuilder:
                 b = base_j + (i + 1)
                 c = base_j1 + (i + 1)
                 d = base_j1 + i
-                # 대각선 (a, c)로 분할
                 triangles.append(Triangle(*sorted((a, b, c))))
                 triangles.append(Triangle(*sorted((a, c, d))))
         return triangles
