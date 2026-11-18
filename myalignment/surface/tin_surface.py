@@ -5,6 +5,10 @@ import math
 
 from myalignment.surface.boundary import Boundary
 from myalignment.surface.boundary_set import BoundarySet
+from myalignment.surface.breakline import Breakline
+from myalignment.surface.breakline_set import BreaklineSet
+from myalignment.surface.breakline_type import BreaklineType
+from myalignment.surface.constrained_delaunay import ConstrainedDelaunayTriangulator
 from myalignment.surface.tin_point import TinPoint
 from myalignment.surface.triangle import Triangle
 from myalignment.surface.delaunay import DelaunayTriangulator
@@ -16,13 +20,14 @@ class TinSurface:
     TIN 지표면 (불변).
 
     C3D의 TINSurface와 호환.
-    - 점 + 삼각형 + 경계.
+    - 점 + 삼각형 + 경계 + Breakline.
     - 임의 점의 표고/경사 계산.
     """
     name: str = "Surface1"
     points: tuple[TinPoint, ...] = field(default_factory=tuple)
     triangles: tuple[Triangle, ...] = field(default_factory=tuple)
     boundaries: BoundarySet = field(default_factory=BoundarySet)
+    breaklines: BreaklineSet = field(default_factory=BreaklineSet)
 
     def __post_init__(self):
         n = len(self.points)
@@ -40,13 +45,14 @@ class TinSurface:
         points: list[TinPoint] | list[tuple[float, float, float]],
         name: str = "Surface1",
         boundaries: BoundarySet | None = None,
+        breaklines: BreaklineSet | None = None,
     ) -> "TinSurface":
         """
         점들로부터 TIN 생성.
 
-        - scipy가 있으면 scipy.spatial.Delaunay 사용 (O(N log N)).
-        - 없으면 내부 Bowyer-Watson 사용 (O(N²)).
-        - 규칙 격자는 TinSurfaceBuilder.add_grid 사용을 권장 (O(N)).
+        우선순위:
+            1. Breakline 있음 → ConstrainedDelaunay (강제 삼각분할)
+            2. 없음 → scipy.Delaunay → 폴백 Bowyer-Watson
         """
         tin_points = tuple(
             p if isinstance(p, TinPoint) else TinPoint(*p)
@@ -55,13 +61,24 @@ class TinSurface:
         if len(tin_points) < 3:
             raise ValueError(f"TIN은 ≥ 3점 필요: {len(tin_points)}")
 
-        triangles = _triangulate(tin_points)
-
-        # 경계 필터
         bset = boundaries or BoundarySet()
+        blset = breaklines or BreaklineSet()
+
+        # 삼각분할
+        if len(blset) > 0:
+            triangles_list, all_points = (
+                ConstrainedDelaunayTriangulator.triangulate(
+                    list(tin_points), list(blset.breaklines)
+                )
+            )
+            tin_points = tuple(all_points)
+        else:
+            triangles_list = _triangulate(tin_points)
+
+        # Boundary 필터
         if len(bset) > 0:
             filtered: list[Triangle] = []
-            for tri in triangles:
+            for tri in triangles_list:
                 p1 = tin_points[tri.a]
                 p2 = tin_points[tri.b]
                 p3 = tin_points[tri.c]
@@ -69,13 +86,14 @@ class TinSurface:
                 cy = (p1.y + p2.y + p3.y) / 3.0
                 if bset.contains_point(cx, cy):
                     filtered.append(tri)
-            triangles = filtered
+            triangles_list = filtered
 
         return cls(
             name=name,
             points=tin_points,
-            triangles=tuple(triangles),
+            triangles=tuple(triangles_list),
             boundaries=bset,
+            breaklines=blset,
         )
 
     # ================================================================
@@ -88,11 +106,24 @@ class TinSurface:
         return None
 
     def elevation_at(self, x: float, y: float) -> float:
+        """점의 표고 — Breakline 위면 Breakline 표고 우선."""
+        # 1) Boundary 체크
         if len(self.boundaries) > 0 and not self.boundaries.contains_point(x, y):
             return self._nearest_point_z(x, y)
+
+        # 2) Breakline 위면 Breakline 표고 (Standard/Wall만)
+        for bl in self.breaklines:
+            if bl.breakline_type in (BreaklineType.STANDARD, BreaklineType.WALL):
+                z = bl.elevation_at_x_y(x, y)
+                if z is not None:
+                    return z
+
+        # 3) 삼각형 선형 보간
         tri = self.triangle_at(x, y)
         if tri is not None:
             return tri.elevation_at(x, y, self.points)
+
+        # 4) 가장 가까운 정점
         return self._nearest_point_z(x, y)
 
     def _nearest_point_z(self, x: float, y: float) -> float:
@@ -122,14 +153,16 @@ class TinSurface:
         if len(self.boundaries) == 0:
             return sum(tri.area_2d(self.points) for tri in self.triangles)
         total = 0.0
+        pts = self.points
+        bset = self.boundaries
         for tri in self.triangles:
-            p1 = self.points[tri.a]
-            p2 = self.points[tri.b]
-            p3 = self.points[tri.c]
+            p1 = pts[tri.a]
+            p2 = pts[tri.b]
+            p3 = pts[tri.c]
             cx = (p1.x + p2.x + p3.x) / 3.0
             cy = (p1.y + p2.y + p3.y) / 3.0
-            if self.boundaries.contains_point(cx, cy):
-                total += tri.area_2d(self.points)
+            if bset.contains_point(cx, cy):
+                total += tri.area_2d(pts)
         return total
 
     @property
@@ -137,26 +170,29 @@ class TinSurface:
         if len(self.boundaries) == 0:
             return sum(tri.area_3d(self.points) for tri in self.triangles)
         total = 0.0
+        pts = self.points
+        bset = self.boundaries
         for tri in self.triangles:
-            p1 = self.points[tri.a]
-            p2 = self.points[tri.b]
-            p3 = self.points[tri.c]
+            p1 = pts[tri.a]
+            p2 = pts[tri.b]
+            p3 = pts[tri.c]
             cx = (p1.x + p2.x + p3.x) / 3.0
             cy = (p1.y + p2.y + p3.y) / 3.0
-            if self.boundaries.contains_point(cx, cy):
-                total += tri.area_3d(self.points)
+            if bset.contains_point(cx, cy):
+                total += tri.area_3d(pts)
         return total
 
     # ================================================================
-    # 경계 추가/제거
+    # 경계/Breakline 추가/제거
     # ================================================================
     def with_boundary(self, boundary: Boundary) -> "TinSurface":
         new_boundaries = self.boundaries.add(boundary)
         filtered: list[Triangle] = []
+        pts = self.points
         for tri in self.triangles:
-            p1 = self.points[tri.a]
-            p2 = self.points[tri.b]
-            p3 = self.points[tri.c]
+            p1 = pts[tri.a]
+            p2 = pts[tri.b]
+            p3 = pts[tri.c]
             cx = (p1.x + p2.x + p3.x) / 3.0
             cy = (p1.y + p2.y + p3.y) / 3.0
             if new_boundaries.contains_point(cx, cy):
@@ -169,6 +205,26 @@ class TinSurface:
 
     def without_boundary(self, name: str) -> "TinSurface":
         return replace(self, boundaries=self.boundaries.remove(name))
+
+    def with_breakline(self, breakline: Breakline) -> "TinSurface":
+        """Breakline 추가한 새 Surface (재삼각분할)."""
+        new_blset = self.breaklines.add(breakline)
+        return TinSurface.from_points(
+            list(self.points),
+            name=self.name,
+            boundaries=self.boundaries,
+            breaklines=new_blset,
+        )
+
+    def without_breakline(self, name: str) -> "TinSurface":
+        """Breakline 제거한 새 Surface (재삼각분할)."""
+        new_blset = self.breaklines.remove(name)
+        return TinSurface.from_points(
+            list(self.points),
+            name=self.name,
+            boundaries=self.boundaries,
+            breaklines=new_blset,
+        )
 
     # ================================================================
     # 토공량 (Cut/Fill)
@@ -188,6 +244,7 @@ class TinSurface:
         use_boundary = len(self.boundaries) > 0
         pts = self.points
         opts = other.points
+        bset = self.boundaries
 
         for tri in self.triangles:
             if use_boundary:
@@ -196,7 +253,7 @@ class TinSurface:
                 p3 = pts[tri.c]
                 cx = (p1.x + p2.x + p3.x) / 3.0
                 cy = (p1.y + p2.y + p3.y) / 3.0
-                if not self.boundaries.contains_point(cx, cy):
+                if not bset.contains_point(cx, cy):
                     continue
 
             d1 = pts[tri.a].z - opts[tri.a].z
@@ -220,6 +277,7 @@ class TinSurface:
         fill_total = 0.0
         use_boundary = len(self.boundaries) > 0
         pts = self.points
+        bset = self.boundaries
 
         for tri in self.triangles:
             if use_boundary:
@@ -228,7 +286,7 @@ class TinSurface:
                 p3 = pts[tri.c]
                 cx = (p1.x + p2.x + p3.x) / 3.0
                 cy = (p1.y + p2.y + p3.y) / 3.0
-                if not self.boundaries.contains_point(cx, cy):
+                if not bset.contains_point(cx, cy):
                     continue
 
             d1 = pts[tri.a].z - target_elevation
@@ -278,6 +336,7 @@ class TinSurface:
             f"TinSurface('{self.name}', "
             f"points={len(self.points)}, "
             f"triangles={len(self.triangles)}, "
+            f"breaklines={len(self.breaklines)}, "
             f"area={self.area_2d:,.1f}m²)"
         )
 
@@ -293,7 +352,7 @@ except ImportError:
 
 
 def _triangulate(points: tuple[TinPoint, ...]) -> list[Triangle]:
-    """점 집합 → 삼각형 리스트."""
+    """점 집합 → 삼각형 리스트. scipy 우선, 폴백 Bowyer-Watson."""
     if _HAS_SCIPY and len(points) >= 4:
         coords = [(p.x, p.y) for p in points]
         try:
@@ -303,6 +362,5 @@ def _triangulate(points: tuple[TinPoint, ...]) -> list[Triangle]:
                 for simplex in tri.simplices
             ]
         except Exception:
-            # Qhull 실패 시 폴백
             pass
     return DelaunayTriangulator.triangulate(list(points))

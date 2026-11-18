@@ -5,9 +5,13 @@ from dataclasses import replace
 from myalignment.surface.boundary import Boundary
 from myalignment.surface.boundary_set import BoundarySet
 from myalignment.surface.boundary_type import BoundaryType
+from myalignment.surface.breakline import Breakline
+from myalignment.surface.breakline_set import BreaklineSet
+from myalignment.surface.breakline_type import BreaklineType
+from myalignment.surface.constrained_delaunay import ConstrainedDelaunayTriangulator
 from myalignment.surface.delaunay import DelaunayTriangulator
 from myalignment.surface.tin_point import TinPoint
-from myalignment.surface.tin_surface import TinSurface
+from myalignment.surface.tin_surface import TinSurface, _triangulate
 from myalignment.surface.triangle import Triangle
 
 
@@ -20,6 +24,7 @@ class TinSurfaceBuilder:
         self._outer_boundaries: list[Boundary] = []
         self._hide_boundaries: list[Boundary] = []
         self._grid_info: tuple[int, int] | None = None
+        self._breaklines: list[Breakline] = []
 
     # ---- 점 ----
     def add_point(self, x: float, y: float, z: float) -> "TinSurfaceBuilder":
@@ -66,6 +71,26 @@ class TinSurfaceBuilder:
         )
         return self
 
+    # ---- Breakline ----
+    def add_breakline(self, breakline: Breakline) -> "TinSurfaceBuilder":
+        self._breaklines.append(breakline)
+        self._grid_info = None   # Breakline 추가 시 격자 정형 분할 무효
+        return self
+
+    def add_breakline_coords(
+        self,
+        coords: list[tuple[float, float, float]],
+        name: str = "",
+        breakline_type: BreaklineType = BreaklineType.STANDARD,
+    ) -> "TinSurfaceBuilder":
+        self._breaklines.append(
+            Breakline.from_coords(
+                coords, name=name, breakline_type=breakline_type
+            )
+        )
+        self._grid_info = None
+        return self
+
     # ---- 빌드 ----
     def build(self) -> TinSurface:
         if len(self._points) < 3:
@@ -75,41 +100,54 @@ class TinSurfaceBuilder:
             tuple(self._outer_boundaries) + tuple(self._hide_boundaries)
         )
         boundaries = BoundarySet(boundaries=all_boundaries)
+        blset = (
+            BreaklineSet(breaklines=tuple(self._breaklines))
+            if self._breaklines
+            else BreaklineSet()
+        )
 
-        # 삼각분할 (격자 → 정형 O(N), 아니면 들로네/scipy)
-        if self._grid_info is not None:
+        # 삼각분할 우선순위:
+        #   1) Breakline 있음 → ConstrainedDelaunay (강제)
+        #   2) 격자 → 정형 분할 (O(N))
+        #   3) 그 외 → scipy.Delaunay / 폴백
+        if len(blset) > 0:
+            triangles_list, all_points = (
+                ConstrainedDelaunayTriangulator.triangulate(
+                    list(self._points), list(blset.breaklines)
+                )
+            )
+            points = tuple(all_points)
+        elif self._grid_info is not None:
             nx, ny = self._grid_info
             if len(self._points) != nx * ny:
-                triangles = DelaunayTriangulator.triangulate(
-                    list(self._points)
-                )
+                triangles_list = _triangulate(tuple(self._points))
             else:
-                triangles = self._build_grid_triangles(nx, ny)
+                triangles_list = self._build_grid_triangles(nx, ny)
+            points = tuple(self._points)
         else:
-            triangles = DelaunayTriangulator.triangulate(
-                list(self._points)
-            )
+            triangles_list = _triangulate(tuple(self._points))
+            points = tuple(self._points)
 
-        # 경계 필터 (bbox 사전 필터 + contains_point)
+        # Boundary 필터 (bbox 사전 필터 + contains_point)
         if len(boundaries) > 0:
             filtered: list[Triangle] = []
-            pts = self._points
             bset = boundaries
-            for tri in triangles:
-                p1 = pts[tri.a]
-                p2 = pts[tri.b]
-                p3 = pts[tri.c]
+            for tri in triangles_list:
+                p1 = points[tri.a]
+                p2 = points[tri.b]
+                p3 = points[tri.c]
                 cx = (p1.x + p2.x + p3.x) / 3.0
                 cy = (p1.y + p2.y + p3.y) / 3.0
                 if bset.contains_point(cx, cy):
                     filtered.append(tri)
-            triangles = filtered
+            triangles_list = filtered
 
         return TinSurface(
             name=self._name,
-            points=tuple(self._points),
-            triangles=tuple(triangles),
+            points=points,
+            triangles=tuple(triangles_list),
             boundaries=boundaries,
+            breaklines=blset,
         )
 
     def _build_grid_triangles(self, nx: int, ny: int) -> list[Triangle]:
