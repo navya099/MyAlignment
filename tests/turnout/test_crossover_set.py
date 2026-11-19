@@ -5,7 +5,12 @@ from myalignment.turnout.type import TurnoutType
 
 
 def test_crossover_set_filter():
-    tt = TurnoutType(name="1/12", lead_length=30, radius=300)
+    tt = TurnoutType(
+        name="1/12",
+        frog_number=12,
+        lead_length=30,
+        radius=300,
+    )
     c1 = (
         CrossoverBuilder("C1")
         .with_alignments("A1", "A2")
@@ -21,6 +26,7 @@ def test_crossover_set_filter():
         .build()
     )
     cset = CrossoverSet(crossovers=(c1, c2))
+
 
     a2_crossovers = cset.by_alignment("A2")
     assert len(a2_crossovers) == 2

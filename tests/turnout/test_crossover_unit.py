@@ -61,21 +61,28 @@ def test_validator_not_parallel():
         a1, a2, 20, 20, 100, 100
     )
     assert not is_valid
-    assert "평행하지 않음" in err
+    assert "평행하지 않" in err
 
 
-def test_validator_distance_too_small():
+def test_validator_zero_lateral_distance():
     a1 = MockAlignment("A1", [(0, 0), (1000, 0)])
-    a2 = MockAlignment("A2", [(0, 5), (1000, 5)])   # 5m 간격 (너무 좁음)
+    a2 = MockAlignment("A2", [(0, 0), (1000, 0)])
+
     is_valid, err = CrossoverValidator.validate(
         a1, a2, 20, 20, 100, 100
     )
+
     assert not is_valid
-    assert "선간 거리" in err
+    assert "횡방향 간격" in err
 
 
 def test_crossover_build():
-    tt = TurnoutType(name="1/12", lead_length=30, radius=300)
+    tt = TurnoutType(
+        name="1/12",
+        frog_number=12,
+        lead_length=30,
+        radius=300,
+    )
     crossover = (
         CrossoverBuilder("C1")
         .with_alignments("본선1", "본선2")
@@ -91,19 +98,29 @@ def test_crossover_build():
 
 
 def test_crossover_compute_geometry():
-    a1 = MockAlignment("A1", [(0, 0), (1000, 0)])       # 기준선 (Y=0)
-    a2 = MockAlignment("A2", [(0, 70), (1000, 70)])  # 상대선 (Y=70, 우측에 위치)
+    a1 = MockAlignment("A1", [(0, 0), (1000, 0)])
+    a2 = MockAlignment("A2", [(0, 4.3), (1000, 4.3)])
 
-    tt = TurnoutType(name="1/12", lead_length=30, radius=300)
+    tt = TurnoutType(
+        name="1/12",
+        frog_number=12,
+        lead_length=30,
+        radius=300,
+    )
+
+    delta = (
+            2 * tt.run
+            + (4.3 - 2 * tt.rise) / math.tan(tt.frog_angle)
+    )
+
     crossover = (
         CrossoverBuilder("C1")
         .with_alignments("A1", "A2")
         .with_turnout_type(tt)
-        .at_stations(100, 100)
-        .with_sides(TurnoutSide.LEFT, TurnoutSide.RIGHT)  # 상대 선형 방향에 맞게 좌/우측 분기기 방향 정렬
+        .at_stations(100, 100 + delta)
+        .with_sides(TurnoutSide.LEFT, TurnoutSide.RIGHT)
         .build()
     )
-
     geom = crossover.compute_geometry(a1, a2)
     assert geom.is_valid
     assert geom.connecting_length > 0
@@ -111,8 +128,16 @@ def test_crossover_compute_geometry():
     assert geom.turnout2_point is not None
 
 
-def test_crossover_double():
-    tt = TurnoutType(name="1/12", lead_length=30, radius=300)
+def test_crossover_double(
+side1=TurnoutSide.RIGHT,
+side2=TurnoutSide.LEFT,
+):
+    tt = TurnoutType(
+        name="1/12",
+        frog_number=12,
+        lead_length=30,
+        radius=300,
+    )
     crossover = Crossover.double_crossover(
         name="C_Double",
         alignment1_name="A1",
@@ -121,6 +146,8 @@ def test_crossover_double():
         station1=100,
         station2=120,
         connecting_length=80,
+        side1=TurnoutSide.RIGHT,
+        side2=TurnoutSide.LEFT,
     )
     assert crossover.crossover_type == CrossoverType.DOUBLE
     assert crossover.turnout1.side == TurnoutSide.RIGHT

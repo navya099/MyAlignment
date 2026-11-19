@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from myalignment.alignment.alignment import Alignment
 from myalignment.cant.curve import CantCurve, CantCriticalStation
 from myalignment.turnout.crossover_set import CrossoverSet
+from myalignment.turnout.table_set import TurnoutTableSet
 
 
 @dataclass(frozen=True, slots=True)  # 부모와 동일하게 frozen=True 설정
@@ -13,6 +14,16 @@ class RailAlignment(Alignment):
     gauge: float = 1.435  # 표준궤 (m)
     cant_curves: tuple[CantCurve, ...] = field(default_factory=tuple)
     crossovers: CrossoverSet = field(default_factory=CrossoverSet)
+
+    # 테이블 참조
+    turnout_tables: TurnoutTableSet = field(default_factory=TurnoutTableSet)
+
+    def turnout_entry(self, table_name: str, entry_name: str):
+        """테이블에서 항목 조회."""
+        table = self.turnout_tables.get(table_name)
+        if table is None:
+            return None
+        return table.get(entry_name)
 
     def cant_at(self, station: float) -> CantCriticalStation | None:
         """특정 측점의 캔트(Cant) 정보를 조회합니다."""
