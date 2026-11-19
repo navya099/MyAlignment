@@ -6,6 +6,7 @@ from myalignment.turnout.crossover_type import CrossoverType
 from myalignment.turnout.crossover_validator import CrossoverValidator
 from myalignment.turnout.turnout import Turnout
 from myalignment.turnout.type import TurnoutSide
+from myalignment.turnout.geometry_sampling import TurnoutCurve, CompleteConnection, SamplePoint
 
 @dataclass(frozen=True, slots=True)
 class XY:
@@ -110,6 +111,13 @@ class Crossover:
                                           expected_heading, length, sta1, sta2)
             conn1 = connection(self.connecting_alignment_name, start, end, sign)
             connections = [conn1]
+            def turnout_curve(toe, side_sign, reverse=False):
+                return TurnoutCurve(SamplePoint(toe.x, toe.y), az,
+                                    tt.lead_length, tt.radius, theta,
+                                    side_sign, reverse)
+            paths = [CompleteConnection(conn1.name,
+                                        turnout_curve(p1, sign),
+                                        turnout_curve(p2, sign, reverse=True))]
             if self.crossover_type is CrossoverType.DOUBLE:
                 t3, t4 = self.additional_turnouts
                 if (t3.station_on_source != sta1 or t4.station_on_source != sta2 or
@@ -119,7 +127,11 @@ class Crossover:
                 lower_end = alignment1.point_at(sta2)
                 a = self._offset(upper_start, az, run, -sign*rise)
                 b = self._offset(lower_end, az, -run, sign*rise)
-                connections.append(connection(f'{self.name}_Conn2', a, b, -sign))
+                conn2 = connection(f'{self.name}_Conn2', a, b, -sign)
+                connections.append(conn2)
+                paths.append(CompleteConnection(conn2.name,
+                                                turnout_curve(upper_start, -sign),
+                                                turnout_curve(lower_end, -sign, reverse=True)))
             return CrossoverGeometry(turnout1_station=sta1, turnout1_point=start,
                                      turnout1_azimuth=conn1.start_azimuth,
                                      turnout2_station=sta2, turnout2_point=end,
@@ -127,6 +139,7 @@ class Crossover:
                                      connecting_length=conn1.length,
                                      connecting_azimuth=conn1.start_azimuth,
                                      connections=tuple(connections),
+                                     paths=tuple(paths),
                                      required_station_delta=required_along,
                                      is_valid=True)
         except (ValueError, AttributeError, TypeError) as exc:
