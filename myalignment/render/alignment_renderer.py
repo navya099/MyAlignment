@@ -10,11 +10,14 @@ from myalignment.alignment.style.display_rule import AlignmentComponent, ViewTyp
 from myalignment.enitity.arc_entity import ArcEntity
 from myalignment.enitity.line_entity import LineEntity
 from myalignment.enitity.spiral_entity import SpiralEntity
+from myalignment.render.alignment_label_renderer import AlignmentLabelRenderer
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.scene import Layer, Scene
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
+    from myalignment.profile.profile import Profile
+    from myalignment.surface.tin_surface import TinSurface
 
 
 class AlignmentRenderer:
@@ -30,6 +33,8 @@ class AlignmentRenderer:
     @classmethod
     def render_plan(
         cls, alignment: Alignment, scene: Scene | None = None, sample_step: float = 1.0,
+        *, render_labels: bool = False, surface: TinSurface | None = None,
+        profile: Profile | None = None, reference_alignment: Alignment | None = None,
     ) -> Scene:
         if not math.isfinite(sample_step) or sample_step <= 0:
             raise ValueError("sample_step must be finite and positive")
@@ -74,7 +79,12 @@ class AlignmentRenderer:
                     for point in markers
                 )
 
-        return replace(scene.add_all(primitives), metadata={
+        scene = scene.add_all(primitives)
+        if render_labels:
+            scene = AlignmentLabelRenderer.render(
+                scene, alignment, surface, profile=profile, reference_alignment=reference_alignment,
+            )
+        return replace(scene, metadata={
             **scene.metadata,
             "alignment_name": alignment.name,
             "start_station": alignment.start_station,

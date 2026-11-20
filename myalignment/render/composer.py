@@ -21,6 +21,7 @@ class RenderOptions:
     alignment_sample_step: float = 1.0
     profile_sample_step: float = 5.0
     vertical_exaggeration: float = 10.0
+    render_alignment_labels: bool = False
 
 
 class SceneComposer:
@@ -34,7 +35,10 @@ class SceneComposer:
         options = options or RenderOptions()
         scene = Scene() if scene is None else scene
         if options.render_alignment:
-            scene = AlignmentRenderer.render_plan(alignment, scene, options.alignment_sample_step)
+            scene = AlignmentRenderer.render_plan(
+                alignment, scene, options.alignment_sample_step,
+                render_labels=options.render_alignment_labels,
+            )
         if options.render_profiles:
             for profile in alignment.profiles:
                 scene = ProfileRenderer.render(

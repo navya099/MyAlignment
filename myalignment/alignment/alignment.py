@@ -5,6 +5,7 @@ from cadgeom import Point2d
 
 from myalignment.alignment.alignment_query import AlignmentQuery
 from myalignment.alignment.alignment_transaction import AlignmentTransaction
+from myalignment.alignment.label_set import AlignmentLabelSet
 from myalignment.alignment.style.alignment_style import AlignmentStyle
 from myalignment.corridor.corridor import Corridor
 from myalignment.profile.profile import Profile
@@ -49,6 +50,11 @@ class Alignment:
 
     corridors: list[Corridor] = field(default_factory=list)
     style: AlignmentStyle = field(default_factory=AlignmentStyle.basic, kw_only=True)
+
+    label_set: AlignmentLabelSet = field(default_factory=AlignmentLabelSet.standard, kw_only=True)
+
+    def with_label_set(self, label_set: AlignmentLabelSet) -> "Alignment":
+        return replace(self, label_set=label_set)
 
     def with_style(self, style: AlignmentStyle) -> "Alignment":
         """표시 스타일을 교체한 새 선형을 반환한다."""
