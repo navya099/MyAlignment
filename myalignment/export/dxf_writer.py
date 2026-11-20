@@ -50,7 +50,7 @@ def _groups(stream: TextIO, *pairs: tuple[int, object]) -> None:
 
 
 def _xyz(point, x_code: int = 10) -> tuple[tuple[int, float], ...]:
-    return (x_code, point.x), (x_code + 10, point.y), (x_code + 20, 0.0)
+    return (x_code, point.x), (x_code + 10, point.y), (x_code + 20, getattr(point, "z", 0.0))
 
 
 class DxfWriter:
@@ -69,9 +69,12 @@ class DxfWriter:
             self._patterns.update((name.upper(), pattern) for name, pattern in linotypes.items())
 
     def write(self, path: str | Path) -> None:
+        self._write_scene(path, self.scene.primitives, self.scene.layers)
+
+    def _write_scene(self, path, primitives, explicit_layers):
         layers = {"0": Layer("0")}
-        layers.update((layer.name.casefold(), layer) for layer in self.scene.layers)
-        for primitive in self.scene.primitives:
+        layers.update((layer.name.casefold(), layer) for layer in explicit_layers)
+        for primitive in primitives:
             name = primitive.style.layer or "0"
             layers.setdefault(name.casefold(), Layer(name))
 
@@ -80,18 +83,18 @@ class DxfWriter:
                 stream, (0, "SECTION"), (2, "HEADER"), (9, "$ACADVER"), (1, "AC1009"),
                 (9, "$DWGCODEPAGE"), (3, "ANSI_949"), (0, "ENDSEC"),
             )
-            self._write_tables(stream, layers.values())
+            self._write_tables(stream, layers.values(), primitives)
             _groups(stream, (0, "SECTION"), (2, "BLOCKS"), (0, "ENDSEC"))
             _groups(stream, (0, "SECTION"), (2, "ENTITIES"))
-            for primitive in self.scene.primitives:
+            for primitive in primitives:
                 layer = layers[(primitive.style.layer or "0").casefold()]
                 self._write_primitive(stream, primitive, layer.name)
             _groups(stream, (0, "ENDSEC"), (0, "EOF"))
 
-    def _write_tables(self, stream: TextIO, layers) -> None:
+    def _write_tables(self, stream: TextIO, layers, primitives) -> None:
         linetypes = {"CONTINUOUS"}
         linetypes.update(_linetype(layer.linetype) for layer in layers)
-        linetypes.update(_linetype(primitive.style.linetype) for primitive in self.scene.primitives)
+        linetypes.update(_linetype(primitive.style.linetype) for primitive in primitives)
         linetypes.difference_update(_INHERITED_LINETYPES)
         _groups(stream, (0, "SECTION"), (2, "TABLES"))
         _groups(stream, (0, "TABLE"), (2, "LTYPE"), (70, len(linetypes)))

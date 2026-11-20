@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+from collections import defaultdict
+import math
+from typing import TYPE_CHECKING
+
+from myalignment.corridor.corridor_mesh import CorridorMesh, check_section_topology
+from myalignment.corridor.cross_section_3d import CrossSection3D
+from myalignment.render.primitives_3d import Primitive3D, Style3D
+from myalignment.render.scene_3d import Scene3D
+
+if TYPE_CHECKING:
+    from myalignment.alignment.alignment import Alignment
+    from myalignment.corridor.corridor import Corridor
+    from myalignment.profile.profile import Profile
+
+
+class Corridor3DRenderer:
+    """코리더 영역별 횡단, 종방향 와이어 또는 삼각형 메쉬."""
+
+    LINK_COLORS = {
+        "Pavement": 1, "Pavement_Top": 1, "Pavement_Bottom": 1, "Pavement_Side": 1,
+        "Shoulder": 3, "Slope": 5, "Ditch": 6, "Top": 7, "Datum": 8,
+    }
+
+    @classmethod
+    def render_wireframe(
+        cls, corridor: Corridor, alignment: Alignment, sample_frequency: float | None = None,
+        offset_elevation: float = 0.0, *, profile: Profile | None = None,
+    ) -> Scene3D:
+        primitives = []
+        longitudinal = Style3D(color=8, lineweight=0.15, layer="C-CORRIDOR-LONGITUDINAL")
+        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile):
+            primitives.extend(cls._cross_links(sections))
+            for first, second in zip(sections, sections[1:]):
+                check_section_topology(first, second)
+                primitives.extend(Primitive3D.line(a, b, longitudinal) for a, b in zip(first.points, second.points))
+        return Scene3D(tuple(primitives))
+
+    @classmethod
+    def render_sections_only(
+        cls, corridor: Corridor, alignment: Alignment, sample_frequency: float | None = None,
+        offset_elevation: float = 0.0, *, profile: Profile | None = None,
+    ) -> Scene3D:
+        return Scene3D(tuple(
+            primitive
+            for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile)
+            for primitive in cls._cross_links(sections)
+        ))
+
+    @classmethod
+    def render_mesh(
+        cls, corridor: Corridor, alignment: Alignment, sample_frequency: float | None = None,
+        offset_elevation: float = 0.0, *, profile: Profile | None = None,
+    ) -> Scene3D:
+        primitives = []
+        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile):
+            mesh = CorridorMesh.from_sections(sections)
+            groups = defaultdict(list)
+            for triangle, code in zip(mesh.triangles, mesh.face_codes):
+                groups[cls.LINK_COLORS.get(getattr(code, "value", ""), 7)].append(triangle)
+            for color, faces in groups.items():
+                used = dict.fromkeys(index for triangle in faces for index in triangle)
+                indices = {index: position for position, index in enumerate(used)}
+                primitives.append(Primitive3D.mesh(
+                    (mesh.vertices[index] for index in used),
+                    (tuple(indices[index] for index in triangle) for triangle in faces),
+                    Style3D(color=color, layer="C-CORRIDOR-MESH"),
+                ))
+        return Scene3D(tuple(primitives))
+
+    @classmethod
+    def _cross_links(cls, sections):
+        for section in sections:
+            for (a, b), code in zip(section.links, section.link_codes):
+                color = cls.LINK_COLORS.get(getattr(code, "value", ""), 7)
+                yield Primitive3D.line(
+                    section.points[a], section.points[b],
+                    Style3D(color=color, lineweight=0.3, layer="C-CORRIDOR-SECTION"),
+                )
+
+
+def _sections(corridor, alignment, frequency, offset, profile):
+    if frequency is not None and (not math.isfinite(frequency) or frequency <= 0):
+        raise ValueError("sample_frequency must be finite and positive")
+    if not math.isfinite(offset):
+        raise ValueError("offset_elevation must be finite")
+    profiles = {candidate.name: candidate for candidate in alignment.profiles}
+    for region in corridor.regions:
+        if region.assembly is None:
+            continue
+        grade = profile
+        if corridor.baselines:
+            matches = [b for b in corridor.baselines if b.start_station <= region.start_station
+                       and region.end_station <= b.end_station]
+            if len(matches) != 1:
+                raise ValueError(f"{region.name}: expected exactly one baseline covering the region")
+            baseline = matches[0]
+            if baseline.alignment_name != alignment.name:
+                continue
+            if grade is None and baseline.profile_name:
+                grade = profiles.get(baseline.profile_name)
+                if grade is None:
+                    raise ValueError(f"Missing profile: {baseline.profile_name}")
+
+        step = region.frequency if frequency is None else frequency
+        if not math.isfinite(step) or step <= 0:
+            raise ValueError("region frequency must be finite and positive")
+        count = math.ceil(region.length / step)
+        stations = [min(region.end_station, region.start_station + i * step) for i in range(count)]
+        if stations and stations[-1] == region.end_station:
+            stations.pop()
+        stations.append(region.end_station)
+        yield [
+            CrossSection3D.from_region(
+                alignment, station, region,
+                offset + (grade.elevation_at(station) if grade is not None else 0.0),
+            )
+            for station in stations
+        ]
