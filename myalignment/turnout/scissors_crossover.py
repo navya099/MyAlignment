@@ -305,6 +305,18 @@ class ScissorsCrossover:
         ) as exc:
             return invalid(exc)
 
+    @classmethod
+    def symmetric_auto_at(cls, name, alignment1, alignment2, turnout_type, center):
+        """두 본선과 중심 측점으로 대칭 Scissors Crossover를 생성한다."""
+        from myalignment.turnout.scissors_builder import ScissorsCrossoverBuilder
+
+        return (
+            ScissorsCrossoverBuilder(name)
+            .with_turnout_type(turnout_type)
+            .symmetric_auto_at(alignment1, alignment2, center)
+            .build()
+        )
+
     def with_geometry(self, geometry):
         return replace(self, geometry=geometry)
 
