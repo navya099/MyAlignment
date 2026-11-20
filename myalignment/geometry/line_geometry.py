@@ -48,8 +48,7 @@ class LineGeometry(Geometry):
 
     def project_at(self, p: Point2d) -> ProjectionResult:
         """로컬 점 p를 직선에 투영."""
-        # p는 AlignmentEntity.project()에서 이미 로컬 좌표계로 변환되어 전달된 점(lx, ly)입니다.
-        lx, ly = p.x, p.y
+        lx, ly = self._to_local_coords(p)
 
         is_on = (0.0 <= lx <= self._length)
 

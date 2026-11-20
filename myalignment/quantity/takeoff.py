@@ -9,6 +9,8 @@ from myalignment.quantity.pay_item import PayItem
 from myalignment.quantity.shape import Shape
 from myalignment.corridor.corridor import Corridor
 from myalignment.corridor.region import CorridorRegion
+from myalignment.surface.tin_surface import TinSurface
+from myalignment.surface.volume import cut_fill_between
 from myalignment.target.mapping import TargetMapping
 
 
@@ -36,6 +38,13 @@ class TakeoffResult:
     C3D QTO Report와 호환.
     """
     material_quantities: tuple[MaterialQuantity, ...] = field(default_factory=tuple)
+
+    cut_volume: float = 0.0
+    fill_volume: float = 0.0
+
+    @property
+    def net_volume(self) -> float:
+        return self.cut_volume - self.fill_volume
 
     @property
     def total_cost(self) -> float:
@@ -167,6 +176,16 @@ class QuantityTakeoff:
             )
 
         return TakeoffResult(material_quantities=tuple(quantities))
+
+    def compute_with_surfaces(
+        self,
+        corridor: Corridor,
+        design_surface: TinSurface,
+        existing_surface: TinSurface,
+    ) -> TakeoffResult:
+        """설계면과 원지형의 겹치는 영역에서 절·성토량을 산출한다."""
+        cut, fill = cut_fill_between(existing_surface, design_surface)
+        return TakeoffResult(cut_volume=cut, fill_volume=fill)
 
     def _cross_section_with_shapes(
             self,

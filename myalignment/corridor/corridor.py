@@ -1,10 +1,18 @@
 # corridor/corridor.py
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Iterator
+from dataclasses import dataclass, field, replace
+from collections.abc import Mapping
+from typing import Iterator, TYPE_CHECKING
 
 from myalignment.corridor.baseline import CorridorBaseline
 from myalignment.corridor.region import CorridorRegion
+from myalignment.corridor.surface_set import CorridorSurfaceSet
+
+if TYPE_CHECKING:
+    from myalignment.alignment.alignment import Alignment
+    from myalignment.corridor.surface_builder import CorridorSurfaceSpec
+    from myalignment.profile.profile import Profile
+    from myalignment.surface.tin_surface import TinSurface
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +27,8 @@ class Corridor:
     name: str = ""
     baselines: tuple[CorridorBaseline, ...] = field(default_factory=tuple)
     regions: tuple[CorridorRegion, ...] = field(default_factory=tuple)
+
+    surfaces: CorridorSurfaceSet = field(default_factory=CorridorSurfaceSet)
 
     def __post_init__(self):
         # 영역 정렬 검증
@@ -62,11 +72,22 @@ class Corridor:
         """새 영역 추가한 새 코리더."""
         new_list = list(self.regions) + [region]
         new_list.sort(key=lambda r: r.start_station)
-        return Corridor(
-            name=self.name,
-            baselines=self.baselines,
-            regions=tuple(new_list),
-        )
+        return replace(self, regions=tuple(new_list))
+
+    def build_surface(
+        self,
+        spec: CorridorSurfaceSpec,
+        *,
+        alignments: Mapping[str, Alignment],
+        profiles: Mapping[str, Profile] | None = None,
+    ) -> TinSurface:
+        """연결된 선형과 종단의 월드 좌표에서 표면을 추출한다."""
+        from myalignment.corridor.surface_builder import CorridorSurfaceBuilder
+
+        return CorridorSurfaceBuilder.build(self, spec, alignments=alignments, profiles=profiles)
+
+    def with_surface(self, surface: TinSurface) -> Corridor:
+        return replace(self, surfaces=self.surfaces.add(surface))
 
     def __repr__(self) -> str:
         return (

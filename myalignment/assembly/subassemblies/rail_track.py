@@ -34,4 +34,5 @@ class SingleTrack(Subassembly):
             AssemblyLink(LinkCode.PAVEMENT, left, right),
             AssemblyLink(LinkCode.SLOPE, ballast_left, left),
             AssemblyLink(LinkCode.SLOPE, right, ballast_right),
+            AssemblyLink(LinkCode.BALLAST, ballast_left, ballast_right),
         )

@@ -70,33 +70,38 @@ class AlignmentEntity(ABC):
         return self.tangent_at(self.end_station)
 
     # ---- 월드 좌표 계산 ----
+    @property
+    def _geometry_rotation(self) -> float:
+        # Geometry.point_at() already applies the geometry's start azimuth.
+        return self.start_azimuth - self.geometry.start_azimuth
+
     def point_at(self, station: float, offset: float = 0.0) -> Point2d:
         """주어진 측점의 월드 좌표."""
         s = self._to_local_s(station)
         local_pt = self.geometry.point_at(s, offset)
-        return self._local_to_world(local_pt, self.start_azimuth, self.start_coord)
+        return self._local_to_world(local_pt, self._geometry_rotation, self.start_coord)
 
     def tangent_at(self, station: float) -> float:
         """주어진 측점의 월드 접선 방위각 (rad)."""
         s = self._to_local_s(station)
-        return self.geometry.tangent_at(s)
+        return self.geometry.tangent_at(s) + self._geometry_rotation
 
     def project(self, point: Point2d) -> ProjectionResult:
         """월드 점을 Entity에 투영."""
         # 월드 → 로컬 좌표 변환
-        local_pt = self._world_to_local(point, self.start_azimuth, self.start_coord)
+        local_pt = self._world_to_local(point, self._geometry_rotation, self.start_coord)
         # 로컬 기하에 투영
         local_pr = self.geometry.project_at(local_pt)
         # 로컬 station → 월드 station
         world_station = self.start_station + local_pr.station
         # 투영점 로컬 → 월드
-        world_proj = self._local_to_world(local_pr.point, self.start_azimuth, self.start_coord)
+        world_proj = self._local_to_world(local_pr.point, self._geometry_rotation, self.start_coord)
         return ProjectionResult(
             point=world_proj,
             station=world_station,
             offset=local_pr.offset,
             distance=local_pr.distance,
-            tangent=local_pr.tangent,
+            tangent=local_pr.tangent + self._geometry_rotation,
             is_on_entity=local_pr.is_on_entity,
         )
 

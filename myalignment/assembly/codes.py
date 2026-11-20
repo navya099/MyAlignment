@@ -44,6 +44,7 @@ class LinkCode(Enum):
     DITCH = "Ditch"
     CURB = "Curb"
     DATUM = "Datum"
+    BALLAST = "Ballast"
     TOP = "Top"
 
 
