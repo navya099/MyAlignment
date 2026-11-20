@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 import math
 
+from myalignment.profile.label_set import ProfileLabelSet
+from myalignment.profile.label_style import ProfileLabelStyle
+from myalignment.profile.label_type import ProfileLabelType
+
 from myalignment.profile.profile_asymmetric_parabola import ProfileAsymmetricParabola
 from myalignment.profile.profile_symmetric_parabola import ProfileSymmetricParabola
 from myalignment.profile.profileentity import ProfileEntity
@@ -24,6 +28,14 @@ class Profile:
     name: str = "Profile1"
     profile_type: ProfileType = ProfileType.EG
     entities: ProfileEntityCollection = field(default_factory=ProfileEntityCollection)
+
+    label_set: ProfileLabelSet = field(default_factory=ProfileLabelSet.standard, kw_only=True)
+
+    def with_label_set(self, label_set: ProfileLabelSet) -> "Profile":
+        return replace(self, label_set=label_set)
+
+    def with_label_style(self, label_type: ProfileLabelType, style: ProfileLabelStyle) -> "Profile":
+        return self.with_label_set(self.label_set.with_style(label_type, style))
 
     # ---- 기본 속성 ----
     @property

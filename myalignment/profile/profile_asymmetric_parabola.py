@@ -1,6 +1,7 @@
 # profile/profile_asymmetric_parabola.py
 from __future__ import annotations
 from dataclasses import dataclass
+import math
 
 from myalignment.profile.profileentity import ProfileEntity
 from myalignment.profile.profileentitytype import ProfileEntityType
@@ -132,6 +133,10 @@ class ProfileAsymmetricParabola(ProfileEntity):
         L_in, L_out = self._length_in, self._length_out
         L = self.total_length
         k = self._k()
+        if self._grade_in * self._grade_out < 0 and math.isclose(
+            self.grade_at(self.pvi_station), 0.0, rel_tol=0.0, abs_tol=1e-12
+        ):
+            return self.pvi_station
 
         # 진입 구간: G1 + 2·a_in·u = 0 → u = -G1·L_in²/(2k)
         if abs(k) > 1e-15:

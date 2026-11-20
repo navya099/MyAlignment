@@ -11,6 +11,7 @@ from myalignment.profile.view_style import ProfileViewStyle
 from myalignment.rail.rail_alignment import RailAlignment
 from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRenderer
 from myalignment.render.primitives import Primitive, Style
+from myalignment.render.profile_label_renderer import ProfileLabelRenderer
 from myalignment.render.profile_renderer import ProfileRenderer
 from myalignment.render.scene import Layer, Scene
 from myalignment.render.station_label_renderer import StationLabelRenderer
@@ -57,6 +58,7 @@ class ProfileViewRenderer:
         alignment: Alignment | None = None,
         geometry_band_style: GeometryBandStyle | None = None,
         labels: Sequence[StationElevationLabel] | None = None,
+        render_labels: bool = True,
     ) -> Scene:
         """수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다."""
         scene = Scene() if scene is None else scene
@@ -89,6 +91,8 @@ class ProfileViewRenderer:
 
         for profile in valid_profiles:
             scene = ProfileRenderer.render(profile, scene, vertical_exaggeration=style.vertical_exaggeration)
+            if render_labels:
+                scene = ProfileLabelRenderer.render(scene, profile, style.vertical_exaggeration)
 
         if bands:
             geometry_style = geometry_band_style or GeometryBandStyle()
