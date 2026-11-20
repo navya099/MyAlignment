@@ -13,11 +13,13 @@ from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRend
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.profile_renderer import ProfileRenderer
 from myalignment.render.scene import Layer, Scene
+from myalignment.render.station_label_renderer import StationLabelRenderer
 from myalignment.render.viewport import Viewport, ViewportType
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
     from myalignment.profile.profile import Profile
+    from myalignment.profile.station_label import StationElevationLabel
 
 
 def _ticks(start: float, end: float, interval: float) -> list[float]:
@@ -54,6 +56,7 @@ class ProfileViewRenderer:
         *,
         alignment: Alignment | None = None,
         geometry_band_style: GeometryBandStyle | None = None,
+        labels: Sequence[StationElevationLabel] | None = None,
     ) -> Scene:
         """수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다."""
         scene = Scene() if scene is None else scene
@@ -112,6 +115,9 @@ class ProfileViewRenderer:
                 scene = scene.add_all(cls._band_primitives(
                     band, selected, alignment, stations, start, end, base, direction, viewport
                 ))
+
+        for label in labels or ():
+            scene = StationLabelRenderer.render(scene, label, valid_profiles, style.vertical_exaggeration)
 
         return replace(scene, metadata={
             **scene.metadata,
