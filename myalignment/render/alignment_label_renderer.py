@@ -8,6 +8,7 @@ from cadgeom import Point2d
 
 from myalignment.alignment.label_component import AlignmentLabelComponentType, ReferenceObjectType
 from myalignment.alignment.label_type import AlignmentLabelType
+from myalignment.alignment.station_equation_type import StationEquationType
 from myalignment.enum.alignmententitytype import AlignmentEntityType
 from myalignment.profile.geometry_extractor import GeometryPointExtractor
 from myalignment.render.primitives import Primitive, Style
@@ -105,6 +106,70 @@ def _reference_values(reference_type, target, station, point):
     return {}
 
 
+def _component_primitives(component, point, azimuth, values):
+    origin = Point2d(point.x + component.offset_x, point.y + component.offset_y)
+    style = Style(color=component.text_color, layer=component.layer)
+    kind = component.component_type
+    if kind is AlignmentLabelComponentType.TEXT:
+        def evaluate(match):
+            key = match[1].split("(", 1)[0]
+            return values.get(key, "???")
+
+        text = _FIELD.sub(evaluate, component.contents)
+        for row, line in enumerate(text.replace("\\P", "\n").splitlines()):
+            if line:
+                yield Primitive.text(
+                    Point2d(origin.x, origin.y - row * component.text_height),
+                    line, component.text_height, component.rotation, style,
+                )
+    elif kind in (AlignmentLabelComponentType.LINE, AlignmentLabelComponentType.TICK):
+        angle = component.rotation
+        if kind is AlignmentLabelComponentType.TICK:
+            angle += azimuth
+            if component.tick_direction == "vertical":
+                angle += math.pi / 2
+        dx, dy = component.size * math.cos(angle), component.size * math.sin(angle)
+        yield Primitive.line(
+            Point2d(origin.x - dx, origin.y - dy), Point2d(origin.x + dx, origin.y + dy), style,
+        )
+
+
+def _equation_primitives(alignment, style):
+    previous = None
+    for equation in alignment.station_equations:
+        raw = equation.raw_station_back
+        back = raw
+        if previous is not None:
+            back = previous.station_ahead + previous.equation_type.sign * (raw - previous.raw_station_back)
+        previous = equation
+        if not alignment.start_station <= raw <= alignment.end_station:
+            continue
+
+        point = alignment.point_at(raw)
+        azimuth = alignment.tangent_at(raw)
+        suffix = (
+            style.increasing_suffix if equation.equation_type is StationEquationType.INCREASING
+            else style.decreasing_suffix
+        )
+        fields = {
+            "Station Ahead": f"{equation.station_ahead:.2f}",
+            "Station Back": f"{back:.2f}",
+            "Raw Station": f"{raw:.2f}",
+            "Delta": f"{equation.delta:+.2f}",
+            "Station Jump": f"{equation.station_ahead - back:+.2f}",
+            "Equation Suffix": suffix,
+        }
+        for component in style.components:
+            if not component.visible:
+                continue
+            keys = {field.split("(", 1)[0] for field in _FIELD.findall(component.contents)}
+            if not style.show_raw_station and "Raw Station" in keys:
+                continue
+            if not style.show_delta and keys.intersection(("Delta", "Station Jump")):
+                continue
+            yield from _component_primitives(component, point, azimuth, fields)
+
+
 class AlignmentLabelRenderer:
     """평면선형의 측점, 기하점, 구간 및 참조 텍스트를 렌더링한다."""
 
@@ -116,6 +181,7 @@ class AlignmentLabelRenderer:
         cls, scene: Scene, alignment: Alignment, surface: TinSurface | None = None, *,
         profile: Profile | None = None, reference_alignment: Alignment | None = None,
         major_interval: float | None = None, minor_interval: float | None = None,
+        render_equations: bool = True,
     ) -> Scene:
         """종단은 현재 STA, 참조 선형은 현재 XY의 투영점으로 조회한다."""
         major_interval = cls.MAJOR_INTERVAL if major_interval is None else major_interval
@@ -147,44 +213,24 @@ class AlignmentLabelRenderer:
             for component in style.components:
                 if not component.visible:
                     continue
-                origin = Point2d(point.x + component.offset_x, point.y + component.offset_y)
-                primitive_style = Style(color=component.text_color, layer=component.layer)
-                component_type = component.component_type
-                if component_type is AlignmentLabelComponentType.TEXT:
-                    values = fields
-                    if component.reference_type is not ReferenceObjectType.NONE:
-                        if component.reference_type not in cached_references:
-                            cached_references[component.reference_type] = _reference_values(
-                                component.reference_type, references[component.reference_type], station, point,
-                            )
-                        values = {**fields, **cached_references[component.reference_type]}
+                values = fields
+                reference = component.reference_type
+                if (component.component_type is AlignmentLabelComponentType.TEXT
+                        and reference is not ReferenceObjectType.NONE):
+                    if reference not in cached_references:
+                        cached_references[reference] = _reference_values(
+                            reference, references[reference], station, point,
+                        )
+                    values = {**fields, **cached_references[reference]}
+                primitives.extend(_component_primitives(component, point, azimuth, values))
 
-                    def evaluate(match):
-                        key = match[1].split("(", 1)[0]
-                        return values.get(key, "???")
+        equation_style = alignment.label_set.equation_style
+        if render_equations and equation_style is not None:
+            primitives.extend(_equation_primitives(alignment, equation_style))
 
-                    text = _FIELD.sub(evaluate, component.contents)
-                    for row, line in enumerate(text.replace("\\P", "\n").splitlines()):
-                        if line:
-                            primitives.append(Primitive.text(
-                                Point2d(origin.x, origin.y - row * component.text_height),
-                                line, component.text_height, component.rotation, primitive_style,
-                            ))
-                elif component_type in (AlignmentLabelComponentType.LINE, AlignmentLabelComponentType.TICK):
-                    angle = component.rotation
-                    if component_type is AlignmentLabelComponentType.TICK:
-                        angle += azimuth
-                        if component.tick_direction == "vertical":
-                            angle += math.pi / 2
-                    dx, dy = component.size * math.cos(angle), component.size * math.sin(angle)
-                    primitives.append(Primitive.line(
-                        Point2d(origin.x - dx, origin.y - dy),
-                        Point2d(origin.x + dx, origin.y + dy), primitive_style,
-                    ))
-                else:
-                    continue
-                layers.setdefault(component.layer, Layer(component.layer, color=component.text_color))
-
+        for primitive in primitives:
+            style = primitive.style
+            layers.setdefault(style.layer, Layer(style.layer, color=style.color))
         for layer in layers.values():
             scene = scene.add_layer(layer)
         return scene.add_all(primitives) if primitives else scene

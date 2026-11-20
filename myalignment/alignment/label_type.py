@@ -8,3 +8,4 @@ class AlignmentLabelType(Enum):
     LINE = "Line"
     CURVE = "Curve"
     SPIRAL = "Spiral"
+    STATION_EQUATION = "StationEquation"

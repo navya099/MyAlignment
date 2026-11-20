@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
+from myalignment.alignment.equation_label_style import StationEquationLabelStyle
 from myalignment.alignment.label_style import AlignmentLabelStyle
 from myalignment.alignment.label_type import AlignmentLabelType
 
@@ -14,6 +15,8 @@ class AlignmentLabelSet:
 
     name: str = "Standard"
     styles: Mapping[AlignmentLabelType, AlignmentLabelStyle] = field(default_factory=dict, hash=False)
+
+    equation_style: StationEquationLabelStyle | None = None
 
     def __post_init__(self):
         styles = dict(self.styles)
@@ -27,6 +30,9 @@ class AlignmentLabelSet:
     def with_style(self, label_type: AlignmentLabelType, style: AlignmentLabelStyle) -> AlignmentLabelSet:
         return replace(self, styles={**self.styles, label_type: style})
 
+    def with_equation_style(self, style: StationEquationLabelStyle | None) -> AlignmentLabelSet:
+        return replace(self, equation_style=style)
+
     @classmethod
     def standard(cls) -> AlignmentLabelSet:
         styles = (
@@ -35,7 +41,10 @@ class AlignmentLabelSet:
             AlignmentLabelStyle.geometry_point_style(),
             AlignmentLabelStyle.line_style(),
         )
-        return cls(styles={style.label_type: style for style in styles})
+        return cls(
+            styles={style.label_type: style for style in styles},
+            equation_style=StationEquationLabelStyle.standard(),
+        )
 
     @classmethod
     def with_minor_text(cls) -> AlignmentLabelSet:
