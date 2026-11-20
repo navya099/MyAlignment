@@ -38,14 +38,14 @@ def _stations(alignment, interval):
 
 def _anchors(alignment, major_interval, minor_interval):
     kind = AlignmentLabelType
-    for label_type, interval in ((kind.MAJOR_STATION, major_interval), (kind.MINOR_STATION, minor_interval)):
+    for label_type, interval in ((kind.MINOR_STATION, minor_interval), (kind.MAJOR_STATION, major_interval)):
         if alignment.label_set.get_style(label_type) is None:
             continue
         for station in _stations(alignment, interval):
             if label_type is kind.MINOR_STATION and math.isclose(
                 station, round(station / major_interval) * major_interval,
                 rel_tol=0.0, abs_tol=min(interval, major_interval) * 1e-9,
-            ) and alignment.label_set.get_style(kind.MAJOR_STATION) is not None:
+            ):
                 continue
             yield label_type, station, {}
 
@@ -108,13 +108,18 @@ def _reference_values(reference_type, target, station, point):
 class AlignmentLabelRenderer:
     """평면선형의 측점, 기하점, 구간 및 참조 텍스트를 렌더링한다."""
 
+    MAJOR_INTERVAL = 100.0
+    MINOR_INTERVAL = 20.0
+
     @classmethod
     def render(
         cls, scene: Scene, alignment: Alignment, surface: TinSurface | None = None, *,
         profile: Profile | None = None, reference_alignment: Alignment | None = None,
-        major_interval: float = 100.0, minor_interval: float = 20.0,
+        major_interval: float | None = None, minor_interval: float | None = None,
     ) -> Scene:
         """종단은 현재 STA, 참조 선형은 현재 XY의 투영점으로 조회한다."""
+        major_interval = cls.MAJOR_INTERVAL if major_interval is None else major_interval
+        minor_interval = cls.MINOR_INTERVAL if minor_interval is None else minor_interval
         for interval in (major_interval, minor_interval):
             if not math.isfinite(interval) or interval <= 0:
                 raise ValueError("station intervals must be finite and positive")
@@ -167,8 +172,10 @@ class AlignmentLabelRenderer:
                 elif component_type in (AlignmentLabelComponentType.LINE, AlignmentLabelComponentType.TICK):
                     angle = component.rotation
                     if component_type is AlignmentLabelComponentType.TICK:
-                        angle += azimuth + math.pi / 2
-                    dx, dy = math.cos(angle), math.sin(angle)
+                        angle += azimuth
+                        if component.tick_direction == "vertical":
+                            angle += math.pi / 2
+                    dx, dy = component.size * math.cos(angle), component.size * math.sin(angle)
                     primitives.append(Primitive.line(
                         Point2d(origin.x - dx, origin.y - dy),
                         Point2d(origin.x + dx, origin.y + dy), primitive_style,

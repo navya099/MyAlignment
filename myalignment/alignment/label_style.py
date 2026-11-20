@@ -27,6 +27,7 @@ class AlignmentLabelStyle:
     @classmethod
     def major_station_style(cls) -> AlignmentLabelStyle:
         return cls("Major Station", AlignmentLabelType.MAJOR_STATION, components=(
+            AlignmentLabelComponent(AlignmentLabelComponentType.TICK, size=1.5, offset_y=0.0),
             AlignmentLabelComponent(contents="STA <[Station Value]>", offset_y=2.5),
             AlignmentLabelComponent(contents="N: <[Northing]>", text_height=1.5, offset_y=1.0),
         ))
@@ -34,7 +35,14 @@ class AlignmentLabelStyle:
     @classmethod
     def minor_station_style(cls) -> AlignmentLabelStyle:
         return cls("Minor Station", AlignmentLabelType.MINOR_STATION, components=(
-            AlignmentLabelComponent(AlignmentLabelComponentType.TICK, offset_y=0.0),
+            AlignmentLabelComponent(AlignmentLabelComponentType.TICK, size=0.5, text_color=8, offset_y=0.0),
+        ))
+
+    @classmethod
+    def minor_station_with_text_style(cls) -> AlignmentLabelStyle:
+        return cls("Minor Station + Text", AlignmentLabelType.MINOR_STATION, components=(
+            AlignmentLabelComponent(AlignmentLabelComponentType.TICK, size=0.3, text_color=8, offset_y=0.0),
+            AlignmentLabelComponent(contents="<[Station Value]>", text_height=1.0, text_color=8, offset_y=1.5),
         ))
 
     @classmethod

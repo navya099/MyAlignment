@@ -27,6 +27,8 @@ class AlignmentLabelComponent:
     layer: str = "C-ALIGN-LABEL"
     reference_type: ReferenceObjectType = ReferenceObjectType.NONE
     reference_field: str = ""
+    size: float = 1.0  # LINE/TICK의 반길이
+    tick_direction: str = "vertical"  # 선형 접선 기준
 
     def __post_init__(self):
         if self.component_type is AlignmentLabelComponentType.TEXT and not self.contents:
@@ -37,3 +39,7 @@ class AlignmentLabelComponent:
             raise ValueError("text_color must be an ACI integer from 0 to 256")
         if not all(math.isfinite(value) for value in (self.rotation, self.offset_x, self.offset_y)):
             raise ValueError("rotation and offsets must be finite")
+        if not math.isfinite(self.size) or self.size < 0:
+            raise ValueError("size must be finite and nonnegative")
+        if self.tick_direction not in ("vertical", "horizontal"):
+            raise ValueError("tick_direction must be vertical or horizontal")

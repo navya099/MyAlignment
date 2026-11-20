@@ -31,10 +31,20 @@ class AlignmentLabelSet:
     def standard(cls) -> AlignmentLabelSet:
         styles = (
             AlignmentLabelStyle.major_station_style(),
+            AlignmentLabelStyle.minor_station_style(),
             AlignmentLabelStyle.geometry_point_style(),
             AlignmentLabelStyle.line_style(),
         )
         return cls(styles={style.label_type: style for style in styles})
+
+    @classmethod
+    def with_minor_text(cls) -> AlignmentLabelSet:
+        styles = (
+            AlignmentLabelStyle.major_station_style(),
+            AlignmentLabelStyle.minor_station_with_text_style(),
+            AlignmentLabelStyle.geometry_point_style(),
+        )
+        return cls("With Minor Text", {style.label_type: style for style in styles})
 
     @classmethod
     def with_surface_reference(cls) -> AlignmentLabelSet:

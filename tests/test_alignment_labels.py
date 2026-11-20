@@ -3,7 +3,9 @@ from cadgeom import Point2d
 
 from myalignment.alignment.alignment import Alignment
 from myalignment.alignment.alignment_builder import AlignmentBuilder
-from myalignment.alignment.label_component import AlignmentLabelComponent, ReferenceObjectType
+from myalignment.alignment.label_component import (
+    AlignmentLabelComponent, AlignmentLabelComponentType, ReferenceObjectType,
+)
 from myalignment.alignment.label_set import AlignmentLabelSet
 from myalignment.alignment.label_style import AlignmentLabelStyle
 from myalignment.alignment.label_type import AlignmentLabelType
@@ -39,7 +41,7 @@ def test_station_labels_deduplicate_minor_ticks_and_preserve_sta_origin():
     assert texts == ["100.00 20.000 80", "150.00 20.000 80"]
     ticks = [p for p in scene.primitives if p.type is PrimitiveType.LINE]
     assert [p.points[0].x for p in ticks] == [25, 35, 45, 55, 75, 85, 95, 105]
-    assert ticks[0].points == (Point2d(25, 19), Point2d(25, 21))
+    assert ticks[0].points == (Point2d(25, 19.5), Point2d(25, 20.5))
 
 
 def test_geometry_labels_and_programmatic_reference_text_export(tmp_path):
@@ -98,3 +100,42 @@ def test_segment_labels_render_at_midpoints_and_composer_is_opt_in():
     assert labels[-1].points == (arc.point_at(40),)
     with pytest.raises(ValueError, match="intervals"):
         AlignmentLabelRenderer.render(Scene(), alignment, minor_interval=0)
+
+
+def test_standard_station_ticks_and_optional_minor_text():
+    alignment = (
+        AlignmentBuilder().with_pi_coords([(0, 0), (200, 0)])
+        .with_start_station(-100).build()
+    )
+    standard = AlignmentLabelRenderer.render(Scene(), alignment)
+    ticks = [p for p in standard.primitives if p.type is PrimitiveType.LINE]
+    assert [p.points[0].x for p in ticks] == pytest.approx([20, 40, 60, 80, 120, 140, 160, 180, 0, 100, 200])
+    assert [p.style.color for p in ticks] == [8] * 8 + [7] * 3
+    assert [p.points[1].y - p.points[0].y for p in ticks] == [1] * 8 + [3] * 3
+    assert [p.text for p in standard.primitives if p.type is PrimitiveType.TEXT][:2] == [
+        "STA -100.00", "N: 0.000",
+    ]
+
+    annotated = alignment.with_label_set(AlignmentLabelSet.with_minor_text())
+    scene = AlignmentRenderer.render_plan(annotated, render_labels=True)
+    labels = [p for p in scene.primitives if p.type is PrimitiveType.TEXT]
+    assert [p.text for p in labels[:8]] == ["-80.00", "-60.00", "-40.00", "-20.00",
+                                           "20.00", "40.00", "60.00", "80.00"]
+    assert all(p.text_height == 1 and p.style.color == 8 for p in labels[:8])
+    assert labels[8].text == "STA -100.00"
+
+
+def test_custom_tick_size_and_direction_follow_alignment_tangent():
+    alignment = AlignmentBuilder().with_pi_coords([(10, 20), (10, 80)]).build()
+    style = AlignmentLabelStyle(label_type=AlignmentLabelType.MINOR_STATION, components=(
+        AlignmentLabelComponent(AlignmentLabelComponentType.TICK, size=2, offset_y=0, tick_direction="horizontal"),
+        AlignmentLabelComponent(AlignmentLabelComponentType.TICK, size=3, offset_y=0, tick_direction="vertical"),
+    ))
+    alignment = alignment.with_label_set(AlignmentLabelSet().with_style(style.label_type, style))
+    scene = AlignmentLabelRenderer.render(Scene(), alignment, major_interval=40, minor_interval=20)
+    assert len(scene.primitives) == 4
+    parallel, normal = scene.primitives[:2]
+    assert [(p.x, p.y) for p in parallel.points] == [pytest.approx((10, 38)), pytest.approx((10, 42))]
+    assert [(p.x, p.y) for p in normal.points] == [pytest.approx((13, 40)), pytest.approx((7, 40))]
+    with pytest.raises(ValueError, match="tick_direction"):
+        AlignmentLabelComponent(AlignmentLabelComponentType.TICK, tick_direction="diagonal")
