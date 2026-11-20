@@ -14,6 +14,8 @@ from myalignment.render.primitives import Primitive, Style
 from myalignment.render.profile_label_renderer import ProfileLabelRenderer
 from myalignment.render.profile_renderer import ProfileRenderer
 from myalignment.render.scene import Layer, Scene
+from myalignment.render.stagger_config import StaggerConfig
+from myalignment.render.staggered_renderer import StaggeredRenderer
 from myalignment.render.station_label_renderer import StationLabelRenderer
 from myalignment.render.viewport import Viewport, ViewportType
 
@@ -59,6 +61,7 @@ class ProfileViewRenderer:
         geometry_band_style: GeometryBandStyle | None = None,
         labels: Sequence[StationElevationLabel] | None = None,
         render_labels: bool = True,
+        stagger_config: StaggerConfig | None = None,
     ) -> Scene:
         """수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다."""
         scene = Scene() if scene is None else scene
@@ -123,13 +126,14 @@ class ProfileViewRenderer:
         for label in labels or ():
             scene = StationLabelRenderer.render(scene, label, valid_profiles, style.vertical_exaggeration)
 
-        return replace(scene, metadata={
+        scene = replace(scene, metadata={
             **scene.metadata,
             "alignment_name": alignment_name,
             "vertical_exaggeration": style.vertical_exaggeration,
             "start_station": start,
             "end_station": end,
         })
+        return StaggeredRenderer.apply_stagger(scene, stagger_config) if stagger_config is not None else scene
 
     @classmethod
     def _band_primitives(

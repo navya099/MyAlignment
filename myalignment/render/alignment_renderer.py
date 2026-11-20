@@ -13,6 +13,8 @@ from myalignment.enitity.spiral_entity import SpiralEntity
 from myalignment.render.alignment_label_renderer import AlignmentLabelRenderer
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.scene import Layer, Scene
+from myalignment.render.stagger_config import StaggerConfig
+from myalignment.render.staggered_renderer import StaggeredRenderer
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
@@ -36,6 +38,7 @@ class AlignmentRenderer:
         *, render_labels: bool = False, surface: TinSurface | None = None,
         profile: Profile | None = None, reference_alignment: Alignment | None = None,
         render_equations: bool = True,
+        stagger_config: StaggerConfig | None = None,
     ) -> Scene:
         if not math.isfinite(sample_step) or sample_step <= 0:
             raise ValueError("sample_step must be finite and positive")
@@ -86,12 +89,13 @@ class AlignmentRenderer:
                 scene, alignment, surface, profile=profile, reference_alignment=reference_alignment,
                 render_equations=render_equations,
             )
-        return replace(scene, metadata={
+        scene = replace(scene, metadata={
             **scene.metadata,
             "alignment_name": alignment.name,
             "start_station": alignment.start_station,
             "end_station": alignment.end_station,
         })
+        return StaggeredRenderer.apply_stagger(scene, stagger_config) if stagger_config is not None else scene
 
     @staticmethod
     def _render_arrow(alignment: Alignment, style: Style) -> Primitive:

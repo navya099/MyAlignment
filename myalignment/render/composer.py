@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 from myalignment.render.alignment_renderer import AlignmentRenderer
 from myalignment.render.profile_renderer import ProfileRenderer
 from myalignment.render.scene import Scene
+from myalignment.render.stagger_config import StaggerConfig
+from myalignment.render.staggered_renderer import StaggeredRenderer
 from myalignment.render.surface_renderer import TinSurfaceRenderer
 
 if TYPE_CHECKING:
@@ -22,6 +24,7 @@ class RenderOptions:
     profile_sample_step: float = 5.0
     vertical_exaggeration: float = 10.0
     render_alignment_labels: bool = False
+    stagger_config: StaggerConfig | None = None
 
 
 class SceneComposer:
@@ -48,7 +51,8 @@ class SceneComposer:
             for corridor in alignment.corridors:
                 for surface in corridor.surfaces:
                     scene = TinSurfaceRenderer.render(surface, scene)
-        return scene
+        config = options.stagger_config
+        return StaggeredRenderer.apply_stagger(scene, config) if config is not None else scene
 
     @classmethod
     def compose_multiple(
@@ -56,7 +60,11 @@ class SceneComposer:
     ) -> Scene:
         scene = Scene()
         names = []
+        options = options or RenderOptions()
+        per_alignment_options = replace(options, stagger_config=None)
         for alignment in alignments:
-            scene = cls.compose_alignment(alignment, options, scene=scene)
+            scene = cls.compose_alignment(alignment, per_alignment_options, scene=scene)
             names.append(alignment.name)
-        return replace(scene, metadata={**scene.metadata, "alignment_names": tuple(names)})
+        scene = replace(scene, metadata={**scene.metadata, "alignment_names": tuple(names)})
+        config = options.stagger_config
+        return StaggeredRenderer.apply_stagger(scene, config) if config is not None else scene
