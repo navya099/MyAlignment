@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from myalignment.assembly.assembly import Assembly
+from myalignment.cant.curve import CantCurve
 from myalignment.corridor.baseline import CorridorBaseline
 from myalignment.corridor.corridor import Corridor
 from myalignment.corridor.region import CorridorRegion
@@ -23,6 +24,8 @@ class CorridorBuilder:
             assembly: Assembly,
             frequency: float = 10.0,
             targets: TargetMapping | None = None,
+            *,
+            cant_curve: CantCurve | None = None,
     ) -> "CorridorBuilder":
         self._regions.append(
             CorridorRegion(
@@ -32,6 +35,7 @@ class CorridorBuilder:
                 assembly=assembly,
                 frequency=frequency,
                 target_mapping=targets or TargetMapping.empty(),
+                cant_curve=cant_curve,
             )
         )
         return self

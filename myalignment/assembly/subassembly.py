@@ -1,8 +1,7 @@
 # assembly/subassembly.py
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-import math
+from dataclasses import dataclass, field, replace
 
 from myalignment.assembly.link import AssemblyLink
 from myalignment.assembly.point import AssemblyPoint
@@ -54,40 +53,21 @@ class Subassembly(ABC):
             origin_z: 배치 z 좌표
             side_sign: 방향 (+1: 우측, -1: 좌측). None이면 self.side 사용.
         """
-        sign = side_sign if side_sign is not None else self.side
+        sign = side_sign if side_sign is not None else (self.side or 1)
         points, links = self.generate_geometry(target_mapping)
 
-        placed_points = []
-        for p in points:
-            placed_points.append(
-                AssemblyPoint(
-                    code=p.code,
-                    x=origin_x + sign * p.x,
-                    z=origin_z + p.z,
-                    is_parametric=p.is_parametric,
-                )
+        placed = {
+            p: replace(p, x=origin_x + sign * p.x, z=origin_z + p.z)
+            for p in points
+        }
+        placed_links = tuple(
+            AssemblyLink(
+                code=link.code,
+                start=placed[link.start],
+                end=placed[link.end],
+                shape_code=link.shape_code,
             )
-
-        # 링크는 접점 참조 → 재매핑
-        placed_links = []
-        for link in links:
-            new_start = self._find_point(placed_points, link.start.code)
-            new_end = self._find_point(placed_points, link.end.code)
-            if new_start and new_end:
-                placed_links.append(
-                    AssemblyLink(
-                        code=link.code,
-                        start=new_start,
-                        end=new_end,
-                        shape_code=link.shape_code,
-                    )
-                )
-
-        return tuple(placed_points), tuple(placed_links)
-
-    @staticmethod
-    def _find_point(points, code):
-        for p in points:
-            if p.code == code:
-                return p
-        return None
+            for link in links
+            if link.start in placed and link.end in placed
+        )
+        return tuple(placed[p] for p in points), placed_links

@@ -1,9 +1,9 @@
 # corridor/region.py
 from __future__ import annotations
-from dataclasses import dataclass, field
-import math
+from dataclasses import dataclass, field, replace
 
 from myalignment.assembly.assembly import Assembly
+from myalignment.assembly.codes import PointCode
 from myalignment.cant.curve import CantCurve, CantPivotMethod
 from myalignment.target.mapping import TargetMapping
 
@@ -49,104 +49,43 @@ class CorridorRegion:
 
     def cross_section_at(self, station: float):
         points, links = self.assembly.generate_cross_section(self.target_mapping)
-        if self.cant_curve is not None:
-            cant = self.cant_curve.cant_at(station)
-            if cant is not None:
-                # 캔트 커브의 피벗 방식과 임계 측점 정보를 함께 전달
-                points = self._apply_cant(points, cant, self.cant_curve.pivot_method)
-        return points, links
+        if self.cant_curve is None:
+            return points, links
+        cant = self.cant_curve.cant_at(station)
+        if cant is None or (not cant.left_rail_delta and not cant.right_rail_delta):
+            return points, links
 
-    def _apply_cant(self, points, cant, pivot_method: CantPivotMethod, gauge: float = 1.435) -> list:
-        """
-        철도 캔트(Superelevation) 및 피벗 방식에 따라 횡단면 점들의 표고를 조정합니다.
+        left_x, right_x = -1.435 / 2, 1.435 / 2
+        rail_offsets = {p.code: p.x for p in points}
+        if PointCode.LEFT_RAIL in rail_offsets and PointCode.RIGHT_RAIL in rail_offsets:
+            track_left = rail_offsets[PointCode.LEFT_RAIL]
+            track_right = rail_offsets[PointCode.RIGHT_RAIL]
+            if track_left < 0 < track_right:
+                left_x, right_x = track_left, track_right
 
-        Args:
-            points: 단면 점 리스트 (offset, elevation 속성 보유)
-            cant: CantCriticalStation 객체 (left_rail_delta, right_rail_delta 포함)
-            pivot_method: 회전 중심축 기준 (CENTERLINE, LEFT_RAIL, RIGHT_RAIL)
-            gauge: 궤간 (표준궤 기본 1.435m)
-        """
-        left_delta = getattr(cant, "left_rail_delta", 0.0)
-        right_delta = getattr(cant, "right_rail_delta", 0.0)
+        left_delta, right_delta = cant.left_rail_delta, cant.right_rail_delta
+        slope = (right_delta - left_delta) / (right_x - left_x)
 
-        if abs(left_delta) < 1e-6 and abs(right_delta) < 1e-6:
-            return points
-
-        half_gauge = gauge / 2.0
-
-        # 1. 피벗 방식에 따른 기준 변위 및 경사도(Rotation Slope) 계산
-        if pivot_method == CantPivotMethod.CENTERLINE:
-            # 센터라인(offset = 0) 표고는 변하지 않음 (delta = 0)
-            # 좌우 레일 구간별 구배 계산
-            left_slope = left_delta / (-half_gauge)  # 음수 오프셋 방향 구배
-            right_slope = right_delta / half_gauge  # 양수 오프셋 방향 구배
-
-            updated_points = []
-            for pt in points:
-                offset = getattr(pt, "offset", getattr(pt, "x", 0.0))
-                elevation = getattr(pt, "elevation", getattr(pt, "z", 0.0))
-
-                # 위치에 따라 선형 보간하여 표고 변위 적용
-                if offset < 0:
-                    delta_z = offset * (left_delta / -half_gauge)
-                elif offset > 0:
-                    delta_z = offset * (right_delta / half_gauge)
+        def apply_cant(point):
+            if self.cant_curve.pivot_method is CantPivotMethod.CENTERLINE:
+                if point.x < 0:
+                    delta = point.x * left_delta / left_x
                 else:
-                    delta_z = 0.0
+                    delta = point.x * right_delta / right_x
+            else:
+                delta = left_delta + (point.x - left_x) * slope
+            return replace(point, z=point.z + delta)
 
-                new_elevation = elevation + delta_z
-                updated_points.append(self._update_point_elevation(pt, new_elevation))
-            return updated_points
-
-        elif pivot_method == CantPivotMethod.LEFT_RAIL:
-            # 좌측 레일(offset = -half_gauge)을 고정축(delta = 0)으로 회전
-            # 전체 단면의 회전 경사각(slope) 산출
-            total_tilt = right_delta - left_delta
-            rotation_slope = total_tilt / gauge
-
-            updated_points = []
-            for pt in points:
-                offset = getattr(pt, "offset", getattr(pt, "x", 0.0))
-                elevation = getattr(pt, "elevation", getattr(pt, "z", 0.0))
-
-                # 좌측 레일 위치(-half_gauge)를 기준으로 한 상대 오프셋에 경사 적용
-                relative_offset = offset - (-half_gauge)
-                delta_z = left_delta + relative_offset * rotation_slope
-
-                new_elevation = elevation + delta_z
-                updated_points.append(self._update_point_elevation(pt, new_elevation))
-            return updated_points
-
-        elif pivot_method == CantPivotMethod.RIGHT_RAIL:
-            # 우측 레일(offset = +half_gauge)을 고정축으로 회전
-            total_tilt = right_delta - left_delta
-            rotation_slope = total_tilt / gauge
-
-            updated_points = []
-            for pt in points:
-                offset = getattr(pt, "offset", getattr(pt, "x", 0.0))
-                elevation = getattr(pt, "elevation", getattr(pt, "z", 0.0))
-
-                # 우측 레일 위치(+half_gauge)를 기준으로 한 상대 오프셋에 경사 적용
-                relative_offset = offset - half_gauge
-                delta_z = right_delta + relative_offset * rotation_slope
-
-                new_elevation = elevation + delta_z
-                updated_points.append(self._update_point_elevation(pt, new_elevation))
-            return updated_points
-
-        return points
-
-    def _update_point_elevation(self, pt, new_elevation: float):
-        """불변 객체(frozen dataclass)의 표고를 갱신한 새 객체 반환"""
-        from dataclasses import replace
-        if hasattr(pt, "elevation"):
-            return replace(pt, elevation=new_elevation)
-        elif hasattr(pt, "z"):
-            return replace(pt, z=new_elevation)
-        return pt
+        section_points = dict.fromkeys(points)
+        for link in links:
+            section_points[link.start] = None
+            section_points[link.end] = None
+        updated = {point: apply_cant(point) for point in section_points}
+        return (
+            tuple(updated[p] for p in points),
+            tuple(replace(link, start=updated[link.start], end=updated[link.end]) for link in links),
+        )
 
     def with_targets(self, mapping: TargetMapping) -> "CorridorRegion":
         """Target 매핑 갱신한 새 Region."""
-        from dataclasses import replace
         return replace(self, target_mapping=mapping)

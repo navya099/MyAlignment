@@ -1,7 +1,6 @@
 # assembly/assembly.py
 from __future__ import annotations
 from dataclasses import dataclass, field
-import math
 
 from myalignment.assembly.codes import PointCode
 from myalignment.assembly.link import AssemblyLink
@@ -23,6 +22,8 @@ class Assembly:
     left_subassemblies: tuple[Subassembly, ...] = field(default_factory=tuple)
     right_subassemblies: tuple[Subassembly, ...] = field(default_factory=tuple)
 
+    center_subassembly: Subassembly | None = None
+
     def generate_cross_section(
             self,
             target_mapping: TargetMapping | None = None,
@@ -40,11 +41,26 @@ class Assembly:
         center = AssemblyPoint(code=PointCode.CENTERLINE, x=0.0, z=0.0)
         all_points.append(center)
 
+        left_origin = right_origin = (0.0, 0.0)
+        if self.center_subassembly is not None:
+            points, links = self.center_subassembly.place_at(
+                0.0, 0.0, side_sign=1, target_mapping=target_mapping
+            )
+            for point in points:
+                if not self._point_exists(all_points, point):
+                    all_points.append(point)
+            all_links.extend(links)
+            if points:
+                left = min(points, key=lambda p: p.x)
+                right = max(points, key=lambda p: p.x)
+                left_origin = (left.x, left.z)
+                right_origin = (right.x, right.z)
+
         # 우측 배치 (side=+1)
         self._place_side(
             subassemblies=self.right_subassemblies,
             side_sign=+1,
-            origin=(0.0, 0.0),
+            origin=right_origin,
             points=all_points,
             links=all_links,
             target_mapping=target_mapping
@@ -54,7 +70,7 @@ class Assembly:
         self._place_side(
             subassemblies=self.left_subassemblies,
             side_sign=-1,
-            origin=(0.0, 0.0),
+            origin=left_origin,
             points=all_points,
             links=all_links,
             target_mapping=target_mapping
@@ -113,7 +129,15 @@ class AssemblyBuilder:
     def __init__(self, name: str = "Assembly1"):
         self._name = name
         self._left: list[Subassembly] = []
+        self._center: Subassembly | None = None
         self._right: list[Subassembly] = []
+
+    def add_center(self, sub: Subassembly) -> "AssemblyBuilder":
+        """양쪽에 걸친 서브어셈블리를 기준점에 한 번 배치."""
+        if self._center is not None:
+            raise ValueError("중심 서브어셈블리는 하나만 배치할 수 있습니다")
+        self._center = sub
+        return self
 
     def add_right(self, sub: Subassembly) -> "AssemblyBuilder":
         self._right.append(sub)
@@ -132,6 +156,7 @@ class AssemblyBuilder:
     def build(self) -> Assembly:
         return Assembly(
             name=self._name,
+            center_subassembly=self._center,
             left_subassemblies=tuple(self._left),
             right_subassemblies=tuple(self._right),
         )

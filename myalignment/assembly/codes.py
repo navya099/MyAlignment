@@ -23,6 +23,9 @@ class PointCode(Enum):
     DITCH_INNER = "DitchInner"
     DITCH_OUTER = "DitchOuter"
     DITCH_BOTTOM = "DitchBottom"
+    # 철도
+    LEFT_RAIL = "LeftRail"
+    RIGHT_RAIL = "RightRail"
     # 일반
     CROWN = "Crown"
     EDGE = "Edge"
