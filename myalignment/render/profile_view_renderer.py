@@ -5,9 +5,11 @@ from dataclasses import replace
 import math
 from typing import TYPE_CHECKING
 
+from myalignment.profile.band_style import GeometryBandStyle
 from myalignment.profile.view_band import BandType, ProfileViewBand
 from myalignment.profile.view_style import ProfileViewStyle
 from myalignment.rail.rail_alignment import RailAlignment
+from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRenderer
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.profile_renderer import ProfileRenderer
 from myalignment.render.scene import Layer, Scene
@@ -51,6 +53,7 @@ class ProfileViewRenderer:
         scene: Scene | None = None,
         *,
         alignment: Alignment | None = None,
+        geometry_band_style: GeometryBandStyle | None = None,
     ) -> Scene:
         """수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다."""
         scene = Scene() if scene is None else scene
@@ -85,13 +88,22 @@ class ProfileViewRenderer:
             scene = ProfileRenderer.render(profile, scene, vertical_exaggeration=style.vertical_exaggeration)
 
         if bands:
-            scene = scene.add_layer(Layer(cls.BAND_LAYER))
+            geometry_style = geometry_band_style or GeometryBandStyle()
             stations = _ticks(start, end, style.grid_major_interval_station)
             edges = {"bottom": low, "top": high}
             for band in bands:
                 location = band.location or style.band_location
                 direction = 1 if location == "top" else -1
                 base = edges[location] + direction * band.gap
+                if band.band_type is BandType.HORIZONTAL_GEOMETRY and alignment is not None:
+                    outer_edge = base + direction * geometry_style.band_height
+                    scene = HorizontalGeometryBandRenderer.render(
+                        scene, alignment, max(base, outer_edge), geometry_style,
+                        style.vertical_exaggeration, station_range=(start, end),
+                    )
+                    edges[location] = outer_edge + direction * (2 * geometry_style.tick_length + 1.0)
+                    continue
+                scene = scene.add_layer(Layer(cls.BAND_LAYER))
                 selected = tuple(
                     p for p in valid_profiles if not band.profile_names or p.name in band.profile_names
                 )
@@ -133,11 +145,6 @@ class ProfileViewRenderer:
                         station, row, f"{profile.name}: {entity.entity_type.name} "
                         f"{entity.start_grade:+.2%} to {entity.end_grade:+.2%}",
                     ))
-        elif band.band_type is BandType.HORIZONTAL_GEOMETRY and alignment is not None:
-            for entity in alignment.entities:
-                lo, hi = max(start, entity.start_station), min(end, entity.end_station)
-                if lo < hi:
-                    labels.append(((lo + hi) / 2, 0, f"{entity.entity_type.name} {entity.length:.2f} m"))
         elif band.band_type is BandType.CANT_DATA and isinstance(alignment, RailAlignment):
             sample_stations = set(stations)
             sample_stations.update(
