@@ -5,7 +5,7 @@ from dataclasses import replace
 import math
 from typing import TYPE_CHECKING
 
-from myalignment.profile.band_style import GeometryBandStyle
+from myalignment.profile.band_style import GeometryBandStyle, VerticalGeometryBandStyle
 from myalignment.profile.view_band import BandType, ProfileViewBand
 from myalignment.profile.view_style import ProfileViewStyle
 from myalignment.rail.rail_alignment import RailAlignment
@@ -17,6 +17,7 @@ from myalignment.render.scene import Layer, Scene
 from myalignment.render.stagger_config import StaggerConfig
 from myalignment.render.staggered_renderer import StaggeredRenderer
 from myalignment.render.station_label_renderer import StationLabelRenderer
+from myalignment.render.vertical_geometry_band_renderer import VerticalGeometryBandRenderer
 from myalignment.render.viewport import Viewport, ViewportType
 
 if TYPE_CHECKING:
@@ -59,6 +60,7 @@ class ProfileViewRenderer:
         *,
         alignment: Alignment | None = None,
         geometry_band_style: GeometryBandStyle | None = None,
+        vertical_geometry_band_style: VerticalGeometryBandStyle | None = None,
         labels: Sequence[StationElevationLabel] | None = None,
         render_labels: bool = True,
         stagger_config: StaggerConfig | None = None,
@@ -99,6 +101,7 @@ class ProfileViewRenderer:
 
         if bands:
             geometry_style = geometry_band_style or GeometryBandStyle()
+            vertical_style = vertical_geometry_band_style or VerticalGeometryBandStyle()
             stations = _ticks(start, end, style.grid_major_interval_station)
             edges = {"bottom": low, "top": high}
             for band in bands:
@@ -113,12 +116,23 @@ class ProfileViewRenderer:
                     )
                     edges[location] = outer_edge + direction * (2 * geometry_style.tick_length + 1.0)
                     continue
+                if band.band_type is BandType.VERTICAL_GEOMETRY:
+                    profile = valid_profiles[0]
+                    if band.profile_names:
+                        profile = next(
+                            (p for p in valid_profiles if p.name == band.profile_names[0]), profile,
+                        )
+                    outer_edge = base + direction * vertical_style.band_height
+                    scene = VerticalGeometryBandRenderer.render(
+                        scene, profile, max(base, outer_edge), vertical_style, style.vertical_exaggeration,
+                    )
+                    edges[location] = outer_edge + direction * (2 * vertical_style.tick_length + 1.0)
+                    continue
                 scene = scene.add_layer(Layer(cls.BAND_LAYER))
                 selected = tuple(
                     p for p in valid_profiles if not band.profile_names or p.name in band.profile_names
                 )
-                rows = max(1, len(selected)) if band.band_type is BandType.VERTICAL_GEOMETRY else 1
-                edges[location] = base + direction * (2.0 * rows + 1.0)
+                edges[location] = base + direction * 3.0
                 scene = scene.add_all(cls._band_primitives(
                     band, selected, alignment, stations, start, end, base, direction, viewport
                 ))
@@ -150,15 +164,7 @@ class ProfileViewRenderer:
                     for p in profiles if p.start_station <= station <= p.end_station
                 ]
                 if values:
-                    labels.append((station, 0, f"{station:g} | " + " | ".join(values)))
-        elif band.band_type is BandType.VERTICAL_GEOMETRY:
-            for row, profile in enumerate(profiles):
-                for entity in profile.entities:
-                    station = (entity.start_station + entity.end_station) / 2
-                    labels.append((
-                        station, row, f"{profile.name}: {entity.entity_type.name} "
-                        f"{entity.start_grade:+.2%} to {entity.end_grade:+.2%}",
-                    ))
+                    labels.append((station, f"{station:g} | " + " | ".join(values)))
         elif band.band_type is BandType.CANT_DATA and isinstance(alignment, RailAlignment):
             sample_stations = set(stations)
             sample_stations.update(
@@ -168,11 +174,11 @@ class ProfileViewRenderer:
             for station in sorted(sample_stations):
                 cant = alignment.cant_at(station)
                 if cant is not None:
-                    labels.append((station, 0, f"{station:g} | {cant.cant_value * 1000:+.1f} mm"))
+                    labels.append((station, f"{station:g} | {cant.cant_value * 1000:+.1f} mm"))
 
         exaggeration = viewport.vertical_exaggeration
-        for station, row, text in labels:
+        for station, text in labels:
             # TEXT의 삽입점이 하단이므로 아래 밴드는 글자 높이만큼 추가로 내린다.
-            offset = 2.0 * row + (0.5 if direction > 0 else 2.0)
+            offset = 0.5 if direction > 0 else 2.0
             point = viewport.project(station, base + direction * offset)
             yield Primitive.text(point, text, 1.5 * exaggeration, style=style)

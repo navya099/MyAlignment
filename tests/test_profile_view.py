@@ -79,7 +79,7 @@ def test_profile_view_geometry_and_cant_bands_use_model_data():
     scene = ProfileViewRenderer.render([profile], alignment.name, ProfileViewStyle(), bands, alignment=alignment)
     labels = [p.text for p in scene.primitives if p.type is PrimitiveType.TEXT]
     assert labels == [
-        "Grade: Tangent +2.00% to +2.00%", "Line 100.00 m",
+        "PVI", "PVI", "Line 100.00 m",
         "0 | +0.0 mm", "45 | +105.0 mm", "100 | +0.0 mm",
     ]
 
