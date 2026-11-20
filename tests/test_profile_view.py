@@ -78,10 +78,8 @@ def test_profile_view_geometry_and_cant_bands_use_model_data():
     ]
     scene = ProfileViewRenderer.render([profile], alignment.name, ProfileViewStyle(), bands, alignment=alignment)
     labels = [p.text for p in scene.primitives if p.type is PrimitiveType.TEXT]
-    assert labels == [
-        "PVI", "PVI", "Line 100.00 m",
-        "0 | +0.0 mm", "45 | +105.0 mm", "100 | +0.0 mm",
-    ]
+    assert labels[:3] == ["PVI", "PVI", "Line 100.00 m"]
+    assert {"0 mm", "105 mm", "TI | P: Center", "TO | P: Center"} <= set(labels[3:])
 
 
 def test_profile_view_validates_intervals_and_preserves_empty_scene():

@@ -6,9 +6,11 @@ import math
 from typing import TYPE_CHECKING
 
 from myalignment.profile.band_style import GeometryBandStyle, VerticalGeometryBandStyle
+from myalignment.profile.cant_band_style import CantBandStyle
 from myalignment.profile.view_band import BandType, ProfileViewBand
 from myalignment.profile.view_style import ProfileViewStyle
 from myalignment.rail.rail_alignment import RailAlignment
+from myalignment.render.cant_band_renderer import CantBandRenderer
 from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRenderer
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.profile_label_renderer import ProfileLabelRenderer
@@ -61,6 +63,7 @@ class ProfileViewRenderer:
         alignment: Alignment | None = None,
         geometry_band_style: GeometryBandStyle | None = None,
         vertical_geometry_band_style: VerticalGeometryBandStyle | None = None,
+        cant_band_style: CantBandStyle | None = None,
         labels: Sequence[StationElevationLabel] | None = None,
         render_labels: bool = True,
         stagger_config: StaggerConfig | None = None,
@@ -102,6 +105,7 @@ class ProfileViewRenderer:
         if bands:
             geometry_style = geometry_band_style or GeometryBandStyle()
             vertical_style = vertical_geometry_band_style or VerticalGeometryBandStyle()
+            cant_style = cant_band_style or CantBandStyle()
             stations = _ticks(start, end, style.grid_major_interval_station)
             edges = {"bottom": low, "top": high}
             for band in bands:
@@ -128,13 +132,24 @@ class ProfileViewRenderer:
                     )
                     edges[location] = outer_edge + direction * (2 * vertical_style.tick_length + 1.0)
                     continue
+                if band.band_type is BandType.CANT_DATA:
+                    if isinstance(alignment, RailAlignment):
+                        outer_edge = base + direction * cant_style.band_height
+                        rendered = CantBandRenderer.render(
+                            scene, alignment, max(base, outer_edge), cant_style,
+                            style.vertical_exaggeration, start_station=start, end_station=end,
+                        )
+                        if rendered is not scene:
+                            edges[location] = outer_edge + direction * (cant_style.tick_length + 1.0)
+                            scene = rendered
+                    continue
                 scene = scene.add_layer(Layer(cls.BAND_LAYER))
                 selected = tuple(
                     p for p in valid_profiles if not band.profile_names or p.name in band.profile_names
                 )
                 edges[location] = base + direction * 3.0
                 scene = scene.add_all(cls._band_primitives(
-                    band, selected, alignment, stations, start, end, base, direction, viewport
+                    band, selected, stations, start, end, base, direction, viewport
                 ))
 
         for label in labels or ():
@@ -151,7 +166,7 @@ class ProfileViewRenderer:
 
     @classmethod
     def _band_primitives(
-        cls, band, profiles, alignment, stations, start, end, base, direction, viewport,
+        cls, band, profiles, stations, start, end, base, direction, viewport,
     ):
         style = Style(color=7, layer=cls.BAND_LAYER)
         yield Primitive.line(viewport.project(start, base), viewport.project(end, base), style)
@@ -165,17 +180,6 @@ class ProfileViewRenderer:
                 ]
                 if values:
                     labels.append((station, f"{station:g} | " + " | ".join(values)))
-        elif band.band_type is BandType.CANT_DATA and isinstance(alignment, RailAlignment):
-            sample_stations = set(stations)
-            sample_stations.update(
-                critical.station for curve in alignment.cant_curves
-                for critical in curve.critical_stations if start <= critical.station <= end
-            )
-            for station in sorted(sample_stations):
-                cant = alignment.cant_at(station)
-                if cant is not None:
-                    labels.append((station, f"{station:g} | {cant.cant_value * 1000:+.1f} mm"))
-
         exaggeration = viewport.vertical_exaggeration
         for station, text in labels:
             # TEXT의 삽입점이 하단이므로 아래 밴드는 글자 높이만큼 추가로 내린다.
