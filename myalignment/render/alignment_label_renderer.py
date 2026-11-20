@@ -97,7 +97,7 @@ def _reference_values(reference_type, target, station, point):
             projection = target.project(point)
             return {
                 "Alignment Name": target.name,
-                "Alignment Station": f"{projection.station:.2f}",
+                "Alignment Station": f"{target.raw_to_display_station(projection.station):.2f}",
                 "Alignment Offset": f"{projection.offset:.3f}",
             }
     except ValueError:
@@ -137,7 +137,8 @@ class AlignmentLabelRenderer:
             point = alignment.point_at(station)
             azimuth = alignment.tangent_at(station)
             fields.update({
-                "Station Value": f"{station:.2f}", "Northing": f"{point.y:.3f}",
+                "Station Value": f"{alignment.raw_to_display_station(station):.2f}",
+                "Raw Station": f"{station:.2f}", "Northing": f"{point.y:.3f}",
                 "Easting": f"{point.x:.3f}", "Design Speed": f"{alignment.design_speed:g}",
                 "Bearing": f"{math.degrees(azimuth) % 360:.2f}°",
             })

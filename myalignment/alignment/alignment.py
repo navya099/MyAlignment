@@ -6,6 +6,9 @@ from cadgeom import Point2d
 from myalignment.alignment.alignment_query import AlignmentQuery
 from myalignment.alignment.alignment_transaction import AlignmentTransaction
 from myalignment.alignment.label_set import AlignmentLabelSet
+from myalignment.alignment.station_equation import StationEquation
+from myalignment.alignment.station_equation_collection import StationEquationCollection
+from myalignment.alignment.station_equation_type import StationEquationType
 from myalignment.alignment.style.alignment_style import AlignmentStyle
 from myalignment.corridor.corridor import Corridor
 from myalignment.profile.profile import Profile
@@ -52,6 +55,38 @@ class Alignment:
     style: AlignmentStyle = field(default_factory=AlignmentStyle.basic, kw_only=True)
 
     label_set: AlignmentLabelSet = field(default_factory=AlignmentLabelSet.standard, kw_only=True)
+
+    station_equations: StationEquationCollection = field(
+        default_factory=StationEquationCollection, kw_only=True,
+    )
+
+    def raw_to_display_station(self, raw_station: float) -> float:
+        return self.station_equations.raw_to_display(raw_station)
+
+    def display_to_raw_stations(self, display_station: float) -> tuple[float, ...]:
+        """점프 구간이면 빈 튜플, 중복 구간이면 복수 원시 측점을 반환한다."""
+        if self.station_equations and self.is_valid:
+            return self.station_equations.display_to_raw(display_station, self.start_station, self.end_station)
+        return self.station_equations.display_to_raw(display_station)
+
+    def display_to_raw_station(self, display_station: float) -> float:
+        """표시 측점이 단일 원시 측점에 대응할 때 역변환한다."""
+        candidates = self.display_to_raw_stations(display_station)
+        if not candidates:
+            raise ValueError(f"No raw station matches display station {display_station}")
+        if len(candidates) > 1:
+            raise ValueError(f"Ambiguous display station {display_station}: {candidates}")
+        return candidates[0]
+
+    def add_station_equation(
+        self, raw_station_back: float, station_ahead: float,
+        equation_type: StationEquationType = StationEquationType.INCREASING, comment: str = "",
+    ) -> "Alignment":
+        equation = StationEquation(raw_station_back, station_ahead, equation_type, comment)
+        return replace(self, station_equations=self.station_equations.add(equation))
+
+    def remove_station_equation(self, raw_station_back: float) -> "Alignment":
+        return replace(self, station_equations=self.station_equations.remove_at_raw(raw_station_back))
 
     def with_label_set(self, label_set: AlignmentLabelSet) -> "Alignment":
         return replace(self, label_set=label_set)
@@ -145,7 +180,10 @@ class Alignment:
 
     def reversed_alignment(self) -> "Alignment":
         """뒤집힌 새 선형 (측점도 재배치)."""
-        return replace(self, entities=self.entities.reversed())
+        return replace(
+            self, entities=self.entities.reversed(),
+            station_equations=self.station_equations.reversed(self.start_station, self.end_station),
+        )
 
     # ================================================================
     # Profile 조회
