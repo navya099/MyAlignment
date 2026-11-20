@@ -6,6 +6,7 @@ from cadgeom import Point2d
 from myalignment.corridor.corridor import Corridor
 from myalignment.profile.profile import Profile
 from myalignment.alignment.alignment import Alignment
+from myalignment.alignment.style.alignment_style import AlignmentStyle
 from myalignment.enitity.entity_factory import EntityFactory
 from myalignment.enum.spiraltype import SpiralType
 from myalignment.ipdata.ipdata import PIInput
@@ -47,6 +48,7 @@ class AlignmentBuilder:
         self._design_speed = 0.0
         self._route_type = ""
         self._metadata: dict = {}
+        self._style = AlignmentStyle.basic()
 
         self._is_rail = False
         self._gauge = 1.435
@@ -102,6 +104,10 @@ class AlignmentBuilder:
         self._route_type = route_type
         return self
 
+    def with_style(self, style: AlignmentStyle) -> "AlignmentBuilder":
+        self._style = style
+        return self
+
     def with_metadata(self, **kwargs) -> "AlignmentBuilder":
         self._metadata.update(kwargs)
         return self
@@ -151,6 +157,7 @@ class AlignmentBuilder:
                 metadata=dict(self._metadata),
                 corridors=self._corridors,
                 superelevation=self._superelevation_curves,
+                style=self._style,
                 is_rail=True,
                 gauge=self._gauge,
                 cant_curves=tuple(self._cant_curves),
@@ -167,6 +174,7 @@ class AlignmentBuilder:
             metadata=dict(self._metadata),
             corridors=self._corridors,
             superelevation=self._superelevation_curves,
+            style=self._style,
         )
 
     def as_rail_alignment(self, gauge: float = 1.435, cant_curves=None) -> "AlignmentBuilder":
