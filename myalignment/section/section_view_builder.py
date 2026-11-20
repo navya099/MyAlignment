@@ -10,6 +10,7 @@ from cadgeom import Point2d
 from myalignment.corridor.cross_section_3d import CrossSection3D
 from myalignment.render.scene import Scene
 from myalignment.render.section_view_renderer import SectionViewRenderer
+from myalignment.section.label_set import SectionLabelSet
 from myalignment.section.section_view_data import SectionViewData
 from myalignment.section.section_view_style import SectionViewStyle
 
@@ -50,28 +51,29 @@ class SectionViewBuilder:
     @classmethod
     def single(
         cls, corridor: Corridor, alignment: Alignment, station: float,
-        style: SectionViewStyle | None = None, *, profile: Profile | None = None,
+        style: SectionViewStyle | None = None, label_set: SectionLabelSet | None = None, *,
+        profile: Profile | None = None,
         offset_elevation: float = 0.0,
     ) -> Scene:
         data = cls.build_data(corridor, alignment, station, profile=profile, offset_elevation=offset_elevation)
-        return SectionViewRenderer.render(Scene(), data, style)
+        return SectionViewRenderer.render(Scene(), data, style, label_set if label_set is not None else SectionLabelSet.standard())
 
     @classmethod
     def multiple(
         cls, corridor: Corridor, alignment: Alignment, stations: Sequence[float],
-        style: SectionViewStyle | None = None, column_gap: float = 20.0, *,
+        style: SectionViewStyle | None = None, column_gap: float = 20.0, *, label_set: SectionLabelSet | None = None,
         profile: Profile | None = None, offset_elevation: float = 0.0,
     ) -> Scene:
         return cls.grid_layout(
             corridor, alignment, stations, style, max(1, len(stations)), column_gap,
-            profile=profile, offset_elevation=offset_elevation,
+            label_set=label_set, profile=profile, offset_elevation=offset_elevation,
         )
 
     @classmethod
     def grid_layout(
         cls, corridor: Corridor, alignment: Alignment, stations: Sequence[float],
         style: SectionViewStyle | None = None, columns: int = 3,
-        column_gap: float = 20.0, row_gap: float = 20.0, *,
+        column_gap: float = 20.0, row_gap: float = 20.0, *, label_set: SectionLabelSet | None = None,
         profile: Profile | None = None, offset_elevation: float = 0.0,
     ) -> Scene:
         if not isinstance(columns, int) or columns <= 0:
@@ -88,7 +90,7 @@ class SectionViewBuilder:
             if region is None or region.assembly is None:
                 continue
             section = cls.single(
-                corridor, alignment, station, style, profile=profile, offset_elevation=offset_elevation,
+                corridor, alignment, station, style, label_set, profile=profile, offset_elevation=offset_elevation,
             )
             row, col = divmod(len(rendered), columns)
             x, y = col * (style.width + column_gap), -row * (style.height + row_gap)

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
     from myalignment.corridor.corridor import Corridor
     from myalignment.profile.profile import Profile
+    from myalignment.section.label_set import SectionLabelSet
     from myalignment.section.section_view_style import SectionViewStyle
     from myalignment.surface.tin_surface import TinSurface
 
@@ -24,6 +25,7 @@ class SectionViewComposer:
     def with_surface(
         cls, corridor: Corridor, alignment: Alignment, station: float, surface: TinSurface,
         style: SectionViewStyle | None = None, *, profile: Profile | None = None,
+        label_set: SectionLabelSet | None = None,
         offset_elevation: float = 0.0,
     ) -> Scene:
         data = SectionViewBuilder.build_data(
@@ -31,7 +33,7 @@ class SectionViewComposer:
         )
         points, links = _surface_section(surface, alignment, station, min(-20, data.min_offset), max(20, data.max_offset))
         return SectionViewRenderer.render(
-            Scene(), replace(data, surface_points=points, surface_links=links), style,
+            Scene(), replace(data, surface_points=points, surface_links=links), style, label_set,
         )
 
 

@@ -93,7 +93,7 @@ def test_grid_layout_skips_missing_sections_and_exports_dxf(tmp_path):
     scene = SectionViewBuilder.grid_layout(corridor, alignment, [100, 90, 110, 120], style, columns=2)
     titles = [p for p in scene.primitives if p.text.startswith("Section View")]
     assert scene.metadata["section_stations"] == (100, 110, 120)
-    assert len(scene.layers) == 1
+    assert {layer.name for layer in scene.layers} == {"C-SECTION-VIEW", "C-SECTION-LABEL"}
     assert titles[1].points[0].x - titles[0].points[0].x == style.width + 20
     assert titles[2].points[0].y - titles[0].points[0].y == -(style.height + 20)
     path = tmp_path / "sections.dxf"

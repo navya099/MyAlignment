@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 import math
 
+from cadgeom import Point2d
+
 
 @dataclass(frozen=True, slots=True)
 class SectionViewStyle:
@@ -66,3 +68,27 @@ class SectionViewStyle:
         return self.margin_bottom + (
             (elevation - min_elev) * self.plot_height * self.vertical_exaggeration / (max_elev - min_elev)
         )
+
+
+def section_projection(data, style, min_elev=None, max_elev=None):
+    """횡단 도형과 레이블이 공유하는 등척도 기반 좌표 변환."""
+    lo, hi = min(0.0, data.min_offset), max(0.0, data.max_offset)
+    bottom = data.min_elevation - 1 if min_elev is None else min_elev
+    top = data.max_elevation + 1 if max_elev is None else max_elev
+    if not (math.isfinite(bottom) and math.isfinite(top) and bottom < top):
+        raise ValueError("Elevation bounds must be finite and increasing")
+    exaggeration = style.vertical_exaggeration
+    horizontal_span = max(hi - lo, style.grid_x_interval)
+    scale = min(style.plot_width / horizontal_span, style.plot_height / ((top - bottom) * exaggeration))
+    middle_x, middle_z = (lo + hi) / 2, (bottom + top) / 2
+    half_x = style.plot_width / (2 * scale)
+    half_z = style.plot_height / (2 * scale * exaggeration)
+    lo, hi = middle_x - half_x, middle_x + half_x
+    bottom, top = middle_z - half_z, middle_z + half_z
+
+    def plot(offset, elevation):
+        return Point2d(style.offset_to_x(offset, lo, hi), style.elevation_to_y(
+            elevation, bottom, bottom + 2 * half_z * exaggeration,
+        ))
+
+    return lo, hi, bottom, top, plot

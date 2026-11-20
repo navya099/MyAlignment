@@ -6,11 +6,13 @@ import math
 from cadgeom import Point2d
 
 from myalignment.render.primitives import Primitive, Style
+from myalignment.render.section_label_renderer import SectionLabelRenderer
 from myalignment.render.scene import Layer, Scene
 from myalignment.render.stagger_config import StaggerConfig
 from myalignment.render.staggered_renderer import StaggeredRenderer
+from myalignment.section.label_set import SectionLabelSet
 from myalignment.section.section_view_data import SectionViewData
-from myalignment.section.section_view_style import SectionViewStyle
+from myalignment.section.section_view_style import SectionViewStyle, section_projection
 
 
 def _ticks(low, high, interval):
@@ -24,27 +26,14 @@ class SectionViewRenderer:
 
     @classmethod
     def render(
-        cls, scene: Scene, data: SectionViewData, style: SectionViewStyle | None = None, *,
+        cls, scene: Scene, data: SectionViewData, style: SectionViewStyle | None = None,
+        label_set: SectionLabelSet | None = None, *,
         stagger_config: StaggerConfig | None = None,
     ) -> Scene:
         if not data.points and not data.surface_points:
             return scene
         style = style or SectionViewStyle()
-        lo, hi = min(0.0, data.min_offset), max(0.0, data.max_offset)
-        bottom, top = data.min_elevation - 1, data.max_elevation + 1
-        exaggeration = style.vertical_exaggeration
-        horizontal_span = max(hi - lo, style.grid_x_interval)
-        scale = min(style.plot_width / horizontal_span, style.plot_height / ((top - bottom) * exaggeration))
-        middle_x, middle_z = (lo + hi) / 2, (bottom + top) / 2
-        half_x = style.plot_width / (2 * scale)
-        half_z = style.plot_height / (2 * scale * exaggeration)
-        lo, hi = middle_x - half_x, middle_x + half_x
-        bottom, top = middle_z - half_z, middle_z + half_z
-
-        def plot(offset, elevation):
-            return Point2d(style.offset_to_x(offset, lo, hi), style.elevation_to_y(
-                elevation, bottom, bottom + 2 * half_z * exaggeration,
-            ))
+        lo, hi, bottom, top, plot = section_projection(data, style)
 
         grid = Style(color=style.grid_color, layer=style.layer, lineweight=.15)
         axis = Style(color=style.axis_color, layer=style.layer, lineweight=style.axis_lineweight)
@@ -78,7 +67,7 @@ class SectionViewRenderer:
         for link in data.links:
             a, b = point(link.start), point(link.end)
             primitives.append(Primitive.line(a, b, design))
-            if style.show_slope_labels and abs(link.end.offset - link.start.offset) > 1e-9:
+            if label_set is None and style.show_slope_labels and abs(link.end.offset - link.start.offset) > 1e-9:
                 primitives.append(Primitive.text(
                     Point2d((a.x + b.x) / 2, (a.y + b.y) / 2 + height),
                     f"{link.slope:+.1f}%", height, style=text,
@@ -92,9 +81,9 @@ class SectionViewRenderer:
                     Point2d(anchor.x + 1, anchor.y + direction), design,
                 ))
             values = []
-            if style.show_offset_labels:
+            if label_set is None and style.show_offset_labels:
                 values.append(f"OFF {p.offset:.2f}")
-            if style.show_elevation_labels:
+            if label_set is None and style.show_elevation_labels:
                 values.append(f"EL {p.elevation:.2f}")
             if values:
                 primitives.append(Primitive.text(Point2d(anchor.x + 1, anchor.y + 1),
@@ -109,5 +98,7 @@ class SectionViewRenderer:
                            "Elevation (m)", height, math.pi / 2, text),
         ))
         scene = scene.add_layer(Layer(style.layer, color=style.axis_color)).add_all(primitives)
+        if label_set is not None:
+            scene = SectionLabelRenderer._render_projected(scene, data, style, label_set, plot)
         scene = replace(scene, metadata={**scene.metadata, "section_station": data.station})
         return StaggeredRenderer.apply_stagger(scene, stagger_config) if stagger_config is not None else scene
