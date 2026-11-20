@@ -75,3 +75,14 @@ class SectionViewData:
             code = section_3d.link_codes[index] if section_3d.link_codes else None
             links.append(SectionLink(start, end, getattr(code, "value", ""), slope))
         return cls(station, points, tuple(links))
+
+
+def section_point_slopes(data: SectionViewData):
+    """각 횡단점의 왼쪽과 오른쪽 연결 구배를 찾는다."""
+    slopes = {}
+    for link in data.links:
+        left, right = sorted((link.start, link.end), key=lambda point: point.offset)
+        if right.offset - left.offset > 1e-9:
+            slopes.setdefault(left, (set(), set()))[1].add(round(link.slope, 9))
+            slopes.setdefault(right, (set(), set()))[0].add(round(link.slope, 9))
+    return slopes

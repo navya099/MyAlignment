@@ -10,7 +10,7 @@ from myalignment.render.scene import Layer, Scene
 from myalignment.section.label_component import SectionLabelComponentType
 from myalignment.section.label_set import SectionLabelSet
 from myalignment.section.label_type import SectionLabelType
-from myalignment.section.section_view_data import SectionViewData
+from myalignment.section.section_view_data import SectionViewData, section_point_slopes
 from myalignment.section.section_view_style import SectionViewStyle, section_projection
 
 
@@ -21,12 +21,7 @@ def _anchors(data, label_type):
     kind = SectionLabelType
     station_field = {"Station": f"{data.station:.2f}"}
     if label_type in (kind.OFFSET_ELEVATION, kind.GRADE_BREAK):
-        slopes = {}
-        for link in data.links:
-            left, right = sorted((link.start, link.end), key=lambda point: point.offset)
-            if right.offset - left.offset > 1e-9:
-                slopes.setdefault(left, (set(), set()))[1].add(round(link.slope, 9))
-                slopes.setdefault(right, (set(), set()))[0].add(round(link.slope, 9))
+        slopes = section_point_slopes(data)
         for point in data.points:
             incoming, outgoing = slopes.get(point, ((), ()))
             values = sorted(set(incoming) | set(outgoing))

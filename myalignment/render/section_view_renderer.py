@@ -6,11 +6,13 @@ import math
 from cadgeom import Point2d
 
 from myalignment.render.primitives import Primitive, Style
+from myalignment.render.section_grade_break_renderer import SectionViewGradeBreakRenderer
 from myalignment.render.section_label_renderer import SectionLabelRenderer
 from myalignment.render.scene import Layer, Scene
 from myalignment.render.stagger_config import StaggerConfig
 from myalignment.render.staggered_renderer import StaggeredRenderer
 from myalignment.section.label_set import SectionLabelSet
+from myalignment.section.label_type import SectionLabelType
 from myalignment.section.section_view_data import SectionViewData
 from myalignment.section.section_view_style import SectionViewStyle, section_projection
 
@@ -29,6 +31,7 @@ class SectionViewRenderer:
         cls, scene: Scene, data: SectionViewData, style: SectionViewStyle | None = None,
         label_set: SectionLabelSet | None = None, *,
         stagger_config: StaggerConfig | None = None,
+        render_grade_breaks: bool = False,
     ) -> Scene:
         if not data.points and not data.surface_points:
             return scene
@@ -99,6 +102,9 @@ class SectionViewRenderer:
         ))
         scene = scene.add_layer(Layer(style.layer, color=style.axis_color)).add_all(primitives)
         if label_set is not None:
-            scene = SectionLabelRenderer._render_projected(scene, data, style, label_set, plot)
+            labels = label_set.without_style(SectionLabelType.GRADE_BREAK) if render_grade_breaks else label_set
+            scene = SectionLabelRenderer._render_projected(scene, data, style, labels, plot)
+        if render_grade_breaks:
+            scene = SectionViewGradeBreakRenderer._render_projected(scene, data, plot)
         scene = replace(scene, metadata={**scene.metadata, "section_station": data.station})
         return StaggeredRenderer.apply_stagger(scene, stagger_config) if stagger_config is not None else scene

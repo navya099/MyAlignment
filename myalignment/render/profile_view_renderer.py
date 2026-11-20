@@ -7,16 +7,20 @@ from typing import TYPE_CHECKING
 
 from myalignment.profile.band_style import GeometryBandStyle, VerticalGeometryBandStyle
 from myalignment.profile.cant_band_style import CantBandStyle
+from myalignment.profile.grade_break_style import GradeBreakLabelStyle
+from myalignment.profile.label_type import ProfileLabelType
 from myalignment.profile.view_band import BandType, ProfileViewBand
 from myalignment.profile.view_style import ProfileViewStyle
 from myalignment.rail.rail_alignment import RailAlignment
 from myalignment.render.cant_band_renderer import CantBandRenderer
+from myalignment.render.grade_break_label_renderer import GradeBreakLabelRenderer
 from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRenderer
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.profile_label_renderer import ProfileLabelRenderer
 from myalignment.render.profile_renderer import ProfileRenderer
 from myalignment.render.scene import Layer, Scene
 from myalignment.render.stagger_config import StaggerConfig
+from myalignment.render.stagger_presets import StaggerConfigPresets
 from myalignment.render.staggered_renderer import StaggeredRenderer
 from myalignment.render.station_label_renderer import StationLabelRenderer
 from myalignment.render.vertical_geometry_band_renderer import VerticalGeometryBandRenderer
@@ -66,6 +70,8 @@ class ProfileViewRenderer:
         cant_band_style: CantBandStyle | None = None,
         labels: Sequence[StationElevationLabel] | None = None,
         render_labels: bool = True,
+        grade_break_style: GradeBreakLabelStyle | None = None,
+        render_grade_breaks: bool = True,
         stagger_config: StaggerConfig | None = None,
     ) -> Scene:
         """수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다."""
@@ -97,10 +103,19 @@ class ProfileViewRenderer:
             ))
         scene = scene.add_layer(Layer(cls.GRID_LAYER, color=8)).add_all(grid)
 
+        custom_grade_breaks = render_grade_breaks and grade_break_style is not None
         for profile in valid_profiles:
             scene = ProfileRenderer.render(profile, scene, vertical_exaggeration=style.vertical_exaggeration)
             if render_labels:
-                scene = ProfileLabelRenderer.render(scene, profile, style.vertical_exaggeration)
+                generic = profile
+                if custom_grade_breaks:
+                    generic = profile.with_label_set(
+                        profile.label_set.without_style(ProfileLabelType.GRADIENT_BREAK)
+                        .without_style(ProfileLabelType.PVI)
+                    )
+                scene = ProfileLabelRenderer.render(scene, generic, style.vertical_exaggeration)
+            if custom_grade_breaks:
+                scene = GradeBreakLabelRenderer.render(scene, profile, grade_break_style, style.vertical_exaggeration)
 
         if bands:
             geometry_style = geometry_band_style or GeometryBandStyle()
@@ -162,6 +177,8 @@ class ProfileViewRenderer:
             "start_station": start,
             "end_station": end,
         })
+        if stagger_config is None and custom_grade_breaks:
+            stagger_config = StaggerConfigPresets.up_increment(base=3.0, increment=2.0)
         return StaggeredRenderer.apply_stagger(scene, stagger_config) if stagger_config is not None else scene
 
     @classmethod
