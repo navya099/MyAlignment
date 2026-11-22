@@ -159,3 +159,41 @@ def test_hide_boundary_touching_a_shared_edge_keeps_internal_edges_joined():
     for i, j in clipped.boundary_edges:
         a, b = clipped.points[i], clipped.points[j]
         assert not (a.x == a.y and b.x == b.y)
+
+
+def test_data_clip_filters_measured_points_before_building_tin_and_restores_them():
+    import pytest
+
+    from myalignment.surface.boundary_set import BoundarySet
+
+    points = [(x, y, 10 if 2 <= x <= 8 and 2 <= y <= 8 else 1000)
+              for x in (0, 2, 4, 6, 8, 10) for y in (0, 2, 4, 6, 8, 10)]
+    data = Boundary.rectangle(2, 2, 8, 8, "Input", BoundaryType.DATA_CLIP)
+    original = TinSurface.from_points(points)
+    built = TinSurface.from_points(points, boundaries=BoundarySet((data,)))
+    edited = original.with_boundary(data)
+    assert edited == built
+    assert len(built.points) == 16
+    assert built.area_2d == pytest.approx(36)
+    assert built.max_elevation == 10
+    assert built.volume_above_elevation(5) == pytest.approx((180, 0))
+    assert not built.is_inside_boundary(0, 0)
+    assert built.without_boundary("Input") == original
+
+
+def test_data_clip_cuts_crossing_breakline_without_importing_exterior_vertices():
+    import pytest
+
+    from myalignment.surface.breakline import Breakline
+    from myalignment.surface.breakline_set import BreaklineSet
+
+    points = [(x, y, 100) for x in (0, 2, 4, 6, 8, 10) for y in (0, 2, 4, 6, 8, 10)]
+    ridge = Breakline.from_coords([(0, 5, 110), (10, 5, 130)], "Ridge")
+    data = Boundary.rectangle(2, 2, 8, 8, "Input", BoundaryType.DATA_CLIP)
+    original = TinSurface.from_points(points, breaklines=BreaklineSet((ridge,)))
+    clipped = original.with_boundary(data)
+    assert clipped.area_2d == pytest.approx(36)
+    assert all(2 <= point.x <= 8 and 2 <= point.y <= 8 for point in clipped.points)
+    assert clipped.elevation_at(2, 5) == pytest.approx(114)
+    assert clipped.elevation_at(8, 5) == pytest.approx(126)
+    assert clipped.without_boundary("Input") == original

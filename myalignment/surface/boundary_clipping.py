@@ -1,11 +1,15 @@
 from collections.abc import Iterator
+from dataclasses import replace
 
 from shapely import constrained_delaunay_triangles, prepare, union_all
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, Point, Polygon
 from shapely.validation import explain_validity
 
 from myalignment.surface.boundary import Boundary
 from myalignment.surface.boundary_set import BoundarySet
+from myalignment.surface.breakline_set import BreaklineSet
+from myalignment.surface.breakline_type import BreaklineType
+from myalignment.surface.breakline_vertex import BreaklineVertex
 from myalignment.surface.tin_point import TinPoint
 from myalignment.surface.triangle import Triangle
 
@@ -15,6 +19,57 @@ def _polygon(boundary: Boundary):
     if not polygon.is_valid:
         raise ValueError(f"경계 {boundary.name!r}: {explain_validity(polygon)}")
     return polygon
+
+
+def _data_mask(boundaries: BoundarySet):
+    mask = None
+    for boundary in boundaries.data_clip_boundaries:
+        polygon = _polygon(boundary)
+        mask = polygon if mask is None else mask.intersection(polygon)
+    return mask
+
+
+def clip_input_data(
+    points: tuple[TinPoint, ...], breaklines: BreaklineSet, boundaries: BoundarySet,
+) -> tuple[tuple[TinPoint, ...], BreaklineSet]:
+    """DATA_CLIP 외부의 측량점과 브레이크라인 부분을 삼각분할 전에 제외한다."""
+    mask = _data_mask(boundaries)
+    if mask is None:
+        return points, breaklines
+    prepare(mask)
+
+    selected = tuple(p for p in points if mask.covers(Point(p.x, p.y)))
+    clipped = []
+    for line in breaklines:
+        if line.breakline_type is BreaklineType.NON_DESTRUCTIVE:
+            continue
+        if all(mask.covers(Point(p.x, p.y)) for p in line.vertices):
+            path = LineString([(p.x, p.y) for p in line.vertices])
+            if mask.covers(path):
+                clipped.append(line)
+                continue
+        for i, (a, b) in enumerate(zip(line.vertices, line.vertices[1:])):
+            dx, dy = b.x - a.x, b.y - a.y
+            length2 = dx * dx + dy * dy
+            if not length2:
+                continue
+            segment = LineString([(a.x, a.y), (b.x, b.y)])
+            for part in _line_parts(mask.intersection(segment)):
+                vertices = []
+                right = []
+                ends = sorted(
+                    (((x - a.x) * dx + (y - a.y) * dy) / length2, x, y)
+                    for x, y in (part.coords[0], part.coords[-1])
+                )
+                if ends[0][0] == ends[-1][0]:
+                    continue
+                for fraction, x, y in ends:
+                    vertices.append(BreaklineVertex(x, y, a.z + fraction * (b.z - a.z)))
+                    if line.right_elevations:
+                        z0, z1 = line.right_elevations[i:i + 2]
+                        right.append(z0 + fraction * (z1 - z0))
+                clipped.append(replace(line, vertices=tuple(vertices), right_elevations=tuple(right)))
+    return selected, BreaklineSet(tuple(clipped))
 
 
 def _mask(boundaries: BoundarySet, points: tuple[TinPoint, ...]):
@@ -33,6 +88,9 @@ def _mask(boundaries: BoundarySet, points: tuple[TinPoint, ...]):
         ])
     if boundaries.outer is not None and boundaries.show_boundaries:
         mask = mask.intersection(union_all([_polygon(b) for b in boundaries.show_boundaries]))
+    data = _data_mask(boundaries)
+    if data is not None:
+        mask = mask.intersection(data)
     if boundaries.hide_boundaries:
         mask = mask.difference(union_all([_polygon(b) for b in boundaries.hide_boundaries]))
     return mask
@@ -96,7 +154,9 @@ def clip_mesh(
     points: tuple[TinPoint, ...], triangles: tuple[Triangle, ...], boundaries: BoundarySet,
 ) -> tuple[tuple[TinPoint, ...], tuple[Triangle, ...]]:
     """경계로 자른 면에 원본 삼각형의 표고를 보간한다."""
-    if not triangles or not (boundaries.outer or boundaries.hide_boundaries or boundaries.show_boundaries):
+    if not triangles or not (
+        boundaries.outer or boundaries.hide_boundaries or boundaries.show_boundaries or boundaries.data_clip_boundaries
+    ):
         return points, triangles
     mask = _mask(boundaries, points)
     prepare(mask)

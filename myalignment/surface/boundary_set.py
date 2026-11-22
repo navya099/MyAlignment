@@ -78,8 +78,12 @@ class BoundarySet:
             1. Outer가 있으면: Outer 내부
             2. Hide 내부면: False (구멍)
             3. Show가 있으면: Show 내부만 True
-            4. 그 외: True
+            4. 모든 DataClip 경계 내부
+            5. 그 외: True
         """
+        if any(not clip.contains_point(x, y) for clip in self._data_clips):
+            return False
+
         # 1) Outer: bbox → 내부
         outer = self._outer
         if outer is not None:

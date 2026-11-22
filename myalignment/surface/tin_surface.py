@@ -4,7 +4,7 @@ from dataclasses import dataclass, field, replace
 import math
 
 from myalignment.surface.boundary import Boundary
-from myalignment.surface.boundary_clipping import clip_mesh
+from myalignment.surface.boundary_clipping import clip_input_data, clip_mesh
 from myalignment.surface.boundary_set import BoundarySet
 from myalignment.surface.breakline import Breakline
 from myalignment.surface.breakline_set import BreaklineSet
@@ -48,6 +48,18 @@ class TinSurface:
                 if v < 0 or v >= n:
                     raise ValueError(f"삼각형 인덱스 범위 초과: {v} (n={n})")
 
+        if self.boundaries.data_clip_boundaries and self._source_points is None:
+            if self.triangles:
+                surface = self.from_points(list(self.points), self.name, self.boundaries, self.breaklines)
+                for field_name in ("points", "triangles", "_source_points", "_boundary_source"):
+                    object.__setattr__(self, field_name, getattr(surface, field_name))
+            else:
+                source = self.points
+                points, _ = clip_input_data(source, BreaklineSet(), self.boundaries)
+                object.__setattr__(self, "_source_points", source)
+                object.__setattr__(self, "points", points)
+            return
+
         if len(self.boundaries) and self._boundary_source is None:
             source = (self.points, self.triangles)
             points, faces = clip_mesh(*source, self.boundaries)
@@ -83,15 +95,19 @@ class TinSurface:
         bset = boundaries or BoundarySet()
         blset = breaklines or BreaklineSet()
 
-        if any(line.breakline_type != BreaklineType.NON_DESTRUCTIVE for line in blset):
+        active_points, active_breaklines = clip_input_data(tin_points, blset, bset)
+        if active_points and any(line.breakline_type != BreaklineType.NON_DESTRUCTIVE for line in active_breaklines):
             triangles, all_points = ConstrainedDelaunayTriangulator.triangulate(
-                list(tin_points), list(blset)
+                list(active_points), list(active_breaklines),
             )
             return cls._from_mesh(
                 tuple(all_points), triangles, name, bset, blset, source_points=tin_points,
             )
 
-        return cls._from_mesh(tin_points, _triangulate(tin_points), name, bset, blset)
+        return cls._from_mesh(
+            active_points, _triangulate(active_points), name, bset, blset,
+            source_points=tin_points if bset.data_clip_boundaries else None,
+        )
 
     @classmethod
     def _from_mesh(
@@ -175,6 +191,11 @@ class TinSurface:
         return self._with_boundaries(self.boundaries.remove(name))
 
     def _with_boundaries(self, boundaries: BoundarySet) -> "TinSurface":
+        if boundaries.data_clip_boundaries != self.boundaries.data_clip_boundaries:
+            source = self._breakline_base_points()
+            if len(source) >= 3:
+                return self.from_points(list(source), self.name, boundaries, self.breaklines)
+            return replace(self, points=source, boundaries=boundaries, _source_points=None, _boundary_source=None)
         points, faces = self._boundary_source or (self.points, self.triangles)
         return replace(self, boundaries=boundaries, points=points, triangles=faces, _boundary_source=None)
 
