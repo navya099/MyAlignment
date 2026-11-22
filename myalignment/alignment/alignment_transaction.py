@@ -2,9 +2,9 @@
 # Transaction — 불변 Alignment 수정
 # ================================================================
 from __future__ import annotations
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 import math
-from typing import Iterator, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from cadgeom import Point2d
 
@@ -12,7 +12,11 @@ from myalignment.profile.profile import Profile
 
 from myalignment.enitity.entity_factory import EntityFactory
 from myalignment.ipdata.ipdata import PIInput, PICurveSpec
-from myalignment.structure.structurecollection import StructureCollection
+from myalignment.enitity.arc_entity import ArcEntity
+from myalignment.enitity.line_entity import LineEntity
+from myalignment.enitity.spiral_entity import SpiralEntity
+from myalignment.exception.alignment_error import InvalidGeometryError
+from myalignment.structure.structure import Structure
 
 # 타입 힌트 전용으로만 안전하게 임포트
 if TYPE_CHECKING:
@@ -31,14 +35,23 @@ class AlignmentTransaction:
     def __init__(self, alignment: Alignment):
         self._original = alignment
         self._pending: dict = {}
+        self._active = False
         self._result: Alignment | None = None
 
     def __enter__(self) -> "AlignmentTransaction":
+        if self._active:
+            raise RuntimeError("Transaction이 이미 진행 중입니다.")
+        self._active = True
+        self._result = None
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is None:
-            self._result = replace(self._original, **self._pending)
+        try:
+            if exc_type is None:
+                self._result = replace(self._original, **self._pending)
+        finally:
+            self._pending.clear()
+            self._active = False
         return False
 
     # ---- 빌더 메서드 ----
@@ -61,17 +74,17 @@ class AlignmentTransaction:
         if radius is not None:
             new_specs[index] = replace(new_specs[index], radius=radius)
 
-        new_pi_input = PIInput(
+        new_pi_input = replace(
+            pi_input,
             pi_coords=tuple(new_coords),
             curve_specs=tuple(new_specs),
-            start_station=pi_input.start_station,
         )
         self._pending['entities'] = EntityFactory.build(new_pi_input)
         return self
 
     def update_profile(self, profile: Profile) -> "AlignmentTransaction":
         """프로파일 교체/추가."""
-        profiles = list(self._original.profiles)
+        profiles = list(self._pending.get("profiles", self._original.profiles))
         for i, p in enumerate(profiles):
             if p.profile_type == profile.profile_type:
                 profiles[i] = profile
@@ -81,14 +94,10 @@ class AlignmentTransaction:
         self._pending['profiles'] = tuple(profiles)
         return self
 
-    def add_structure(self, structure) -> "AlignmentTransaction":
+    def add_structure(self, structure: Structure) -> "AlignmentTransaction":
         """구조물 추가."""
-        structures = list(self._original.structures)
-        structures.append(structure)
-        new_col = StructureCollection()
-        for s in structures:
-            new_col.append(s)
-        self._pending['structures'] = new_col
+        structures = self._pending.get("structures", self._original.structures)
+        self._pending["structures"] = structures.add(structure)
         return self
 
     def rename(self, new_name: str) -> "AlignmentTransaction":
@@ -103,24 +112,68 @@ class AlignmentTransaction:
 
     # ---- 내부 ----
     def _extract_pi_input(self) -> PIInput:
-        """현재 Alignment에서 PIInput 역산."""
-        pts = [e.start_coord for e in self._original.entities]
-        if self._original.entities:
-            pts.append(self._original.entities[-1].end_coord)
+        """현재 PI 사양을 읽고, 직접 조립한 Entity는 접선 교점에서 역산한다."""
+        entities = self._pending.get("entities", self._original.entities)
+        if entities._pi_input is not None:
+            return entities._pi_input
 
-        specs = []
-        for i, pt in enumerate(pts):
-            if i == 0 or i == len(pts) - 1:
-                specs.append(PICurveSpec())  # 첫/끝은 직선
-            else:
-                # PI 위치에서 가장 가까운 Entity 찾기
-                e = self._original.entities.entity_at_station(
-                    self._original.start_station + i
-                ) if len(self._original.entities) > i else None
-                radius = getattr(e, 'geometry', None) and getattr(e.geometry, 'radius', None)
-                specs.append(PICurveSpec(radius=radius))
-        return PIInput(
-            pi_coords=tuple(pts),
-            curve_specs=tuple(specs),
-            start_station=self._original.start_station,
-        )
+        points = [entities.start_coord]
+        specs = [PICurveSpec()]
+        i = 0
+        while i < len(entities):
+            first = entities[i]
+            if isinstance(first, LineEntity):
+                i += 1
+                if i == len(entities) or isinstance(entities[i], LineEntity):
+                    points.append(first.end_coord)
+                    specs.append(PICurveSpec())
+                continue
+
+            arc_index = i + int(isinstance(first, SpiralEntity) and not first.geometry.is_reversed)
+            if arc_index >= len(entities) or not isinstance(entities[arc_index], ArcEntity):
+                raise InvalidGeometryError("Entity에서 PI 곡선 사양을 복원할 수 없습니다.")
+            arc = entities[arc_index]
+            entry = first if arc_index != i else None
+            i = arc_index + 1
+            exit_ = entities[i] if (
+                i < len(entities) and isinstance(entities[i], SpiralEntity)
+                and entities[i].geometry.is_reversed
+            ) else None
+            i += int(exit_ is not None)
+            last = exit_ or arc
+            incoming, outgoing = first.start_azimuth, last.end_azimuth
+            determinant = math.sin(outgoing - incoming)
+            if abs(determinant) < 1e-10:
+                raise InvalidGeometryError("평행 접선에서 PI를 복원할 수 없습니다.")
+            dx = last.end_coord.x - first.start_coord.x
+            dy = last.end_coord.y - first.start_coord.y
+            before = (dx * math.sin(outgoing) - dy * math.cos(outgoing)) / determinant
+            points.append(Point2d(
+                first.start_coord.x + before * math.cos(incoming),
+                first.start_coord.y + before * math.sin(incoming),
+            ))
+            entry_length = entry.length if entry else 0.0
+            exit_length = exit_.length if exit_ else 0.0
+            spiral = entry or exit_
+            spec = PICurveSpec(
+                radius=arc.geometry.radius, entry_length=entry_length,
+                exit_length=exit_length, is_symmetric=entry_length == exit_length,
+            )
+            specs.append(replace(spec, spiral_type=spiral.geometry.spiral_type) if spiral else spec)
+            if i == len(entities):
+                points.append(last.end_coord)
+                specs.append(PICurveSpec())
+
+        pi_input = PIInput(tuple(points), tuple(specs), entities.start_station)
+        rebuilt = EntityFactory.build(pi_input)
+        if len(rebuilt) != len(entities) or any(
+            type(a) is not type(b)
+            or a.start_coord.distance_to(b.start_coord) > 1e-6
+            or a.end_coord.distance_to(b.end_coord) > 1e-6
+            or abs(a.length - b.length) > 1e-6
+            or abs(math.remainder(a.start_azimuth - b.start_azimuth, math.tau)) > 1e-8
+            or (isinstance(a, SpiralEntity) and a.geometry.spiral_type != b.geometry.spiral_type)
+            for a, b in zip(entities, rebuilt)
+        ):
+            raise InvalidGeometryError("원래 형상을 유지하는 PI 곡선 사양을 복원할 수 없습니다.")
+        return pi_input

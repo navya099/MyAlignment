@@ -90,13 +90,14 @@ def test_transaction_update_pi():
     original_len = a.length
 
     with a.modify() as tx:
-        tx.update_pi_and_radius(index=1, point=Point2d(100, 50), radius=300)
+        tx.update_pi_and_radius(index=1, point=Point2d(100, 15), radius=300)
     new_a = tx.result
 
     # 원본 불변
     assert math.isclose(a.length, original_len)
     # 새 객체 생성
     assert new_a is not a
+    assert new_a.entities[1].geometry.radius == 300
 
 
 def test_transaction_rename():

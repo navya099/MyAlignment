@@ -66,7 +66,7 @@ class EntityFactory:
                 entities.append(entity)
                 current, station = entity.end_coord, entity.end_station
 
-        return AlignmentEntityCollection(tuple(entities))
+        return AlignmentEntityCollection(tuple(entities), _pi_input=pi_input)
 
     # ---- 헬퍼 ----
     @staticmethod

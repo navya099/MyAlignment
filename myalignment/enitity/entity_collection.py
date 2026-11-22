@@ -1,12 +1,13 @@
 # entity/entity_collection.py
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 
 from cadgeom import Point2d
 
 from myalignment.core.projection_result import ProjectionResult
 from myalignment.enitity.alignment_entity import AlignmentEntity
+from myalignment.ipdata.ipdata import PIInput
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +19,7 @@ class AlignmentEntityCollection:
     - 생성 후 절대 변경되지 않습니다.
     """
     entities: tuple[AlignmentEntity, ...] = field(default_factory=tuple)
+    _pi_input: PIInput | None = field(default=None, repr=False, compare=False, kw_only=True)
 
     def __post_init__(self):
         self._validate_continuity()
@@ -119,7 +121,17 @@ class AlignmentEntityCollection:
             reversed_entities.append(new_e)
             running_station += new_e.length
 
-        return AlignmentEntityCollection(entities=tuple(reversed_entities))
+        pi_input = self._pi_input
+        if pi_input is not None:
+            pi_input = replace(
+                pi_input,
+                pi_coords=pi_input.pi_coords[::-1],
+                curve_specs=tuple(
+                    replace(spec, entry_length=spec.exit_length, exit_length=spec.entry_length)
+                    for spec in reversed(pi_input.curve_specs)
+                ),
+            )
+        return AlignmentEntityCollection(tuple(reversed_entities), _pi_input=pi_input)
 
     def offset_by(self, distance: float) -> "AlignmentEntityCollection":
         """전체 시퀀스를 평행 이동한 새 컬렉션."""
