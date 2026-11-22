@@ -90,12 +90,8 @@ def _sections(corridor, alignment, frequency, offset, profile):
         if region.assembly is None:
             continue
         grade = profile
-        if corridor.baselines:
-            matches = [b for b in corridor.baselines if b.start_station <= region.start_station
-                       and region.end_station <= b.end_station]
-            if len(matches) != 1:
-                raise ValueError(f"{region.name}: expected exactly one baseline covering the region")
-            baseline = matches[0]
+        baseline = corridor.baseline_for_region(region)
+        if baseline is not None:
             if baseline.alignment_name != alignment.name:
                 continue
             if grade is None and baseline.profile_name:
@@ -103,14 +99,7 @@ def _sections(corridor, alignment, frequency, offset, profile):
                 if grade is None:
                     raise ValueError(f"Missing profile: {baseline.profile_name}")
 
-        step = region.frequency if frequency is None else frequency
-        if not math.isfinite(step) or step <= 0:
-            raise ValueError("region frequency must be finite and positive")
-        count = math.ceil(region.length / step)
-        stations = [min(region.end_station, region.start_station + i * step) for i in range(count)]
-        if stations and stations[-1] == region.end_station:
-            stations.pop()
-        stations.append(region.end_station)
+        stations = region.sample_stations(frequency)
         yield [
             CrossSection3D.from_region(
                 alignment, station, region,

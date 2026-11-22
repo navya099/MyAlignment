@@ -36,9 +36,11 @@ class RailCorridorBuilder(CorridorBuilder):
         cant_curve: CantCurve | None = None,
         frequency: float = 5.0,
         targets: TargetMapping | None = None,
+        *,
+        baseline_name: str | None = None,
     ) -> RailCorridorBuilder:
         self.add_region_with_assembly(
             name, start_station, end_station, assembly, frequency, targets,
-            cant_curve=cant_curve,
+            cant_curve=cant_curve, baseline_name=baseline_name,
         )
         return self

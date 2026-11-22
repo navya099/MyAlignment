@@ -65,9 +65,10 @@ class CorridorSurfaceBuilder:
     ) -> TinSurface:
         """영역의 측점 범위에 해당하는 기준선과 이름으로 연결한다.
 
-        종단 이름이 없는 기준선의 표고는 0이다. 이름이 지정된 종단은
-        profiles에서 제공해야 한다.
+        종단 이름이 없는 기준선의 표고는 0이다. 종단 이름이 있으면
+        기준선의 선형에서 먼저 찾고 profiles에서 보완한다.
         """
+        use_region_mesh = spec.use_boundary or len(corridor.baselines) > 1
         points: dict[tuple[float, float], TinPoint] = {}
         boundaries: list[Boundary] = []
         triangles: list[Triangle] = []
@@ -75,30 +76,25 @@ class CorridorSurfaceBuilder:
         for region in corridor.regions:
             if region.assembly is None:
                 continue
-            count = math.ceil(region.length / spec.sample_frequency)
             sections = []
-            for i in range(count + 1):
-                station = min(region.end_station, region.start_station + i * spec.sample_frequency)
+            for station in region.sample_stations(spec.sample_frequency):
                 selected = _section_points(region, station, spec)
                 if selected:
                     sections.append((station, selected))
             if not sections:
                 continue
 
-            candidates = [
-                baseline for baseline in corridor.baselines
-                if baseline.start_station <= region.start_station
-                and region.end_station <= baseline.end_station
-            ]
-            if len(candidates) != 1:
+            baseline = corridor.baseline_for_region(region)
+            if baseline is None:
                 raise ValueError(f"{region.name}: expected exactly one baseline covering the region")
-            baseline = candidates[0]
             alignment = alignments.get(baseline.alignment_name)
             if alignment is None:
                 raise ValueError(f"Missing alignment: {baseline.alignment_name}")
             profile = None
             if baseline.profile_name:
-                profile = profiles.get(baseline.profile_name) if profiles is not None else None
+                profile = next((p for p in alignment.profiles if p.name == baseline.profile_name), None)
+                if profile is None and profiles is not None:
+                    profile = profiles.get(baseline.profile_name)
                 if profile is None:
                     raise ValueError(f"Missing profile: {baseline.profile_name}")
 
@@ -120,7 +116,7 @@ class CorridorSurfaceBuilder:
                 left_edge.append(xy[0])
                 right_edge.append(xy[-1])
 
-            if spec.use_boundary:
+            if use_region_mesh:
                 ring = list(dict.fromkeys(left_edge + right_edge[::-1]))
                 if len(left_edge) >= 2 and len(ring) >= 3:
                     boundary = Boundary.from_coords(ring, f"{region.name}_boundary")
@@ -138,8 +134,10 @@ class CorridorSurfaceBuilder:
                             ))))
 
         name = spec.name or f"{corridor.name}_{spec.code.value}"
-        if spec.use_boundary:
-            if len(boundaries) > 1:
+        if use_region_mesh:
+            if not spec.use_boundary:
+                boundaries = []
+            elif len(boundaries) > 1:
                 boundaries = [
                     Boundary(boundary.name, BoundaryType.SHOW, boundary.vertices)
                     for boundary in boundaries

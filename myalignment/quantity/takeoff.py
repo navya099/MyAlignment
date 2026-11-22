@@ -5,7 +5,6 @@ from collections import defaultdict
 import math
 
 from myalignment.quantity.material import Material, UnitType
-from myalignment.quantity.pay_item import PayItem
 from myalignment.quantity.shape import Shape
 from myalignment.corridor.corridor import Corridor
 from myalignment.corridor.region import CorridorRegion
@@ -107,51 +106,27 @@ class QuantityTakeoff:
             if region.assembly is None:
                 continue
 
-            targets = target_mappings.get(region.name, region.target_mapping)
+            if region.name in target_mappings:
+                region = region.with_targets(target_mappings[region.name])
             stations = region.sample_stations()
-
-            if len(stations) < 2:
-                # 단일 측점: 면적만 산출
-                _, _, shapes = self._cross_section_with_shapes(region, stations[0], targets)
-                for shape in shapes:
-                    material = self._material_by_shape_code(shape.code.name)
+            previous = self._shape_areas(region, stations[0])
+            if len(stations) == 1:
+                for code, area in previous.items():
+                    material = self._material_by_shape_code(code.name)
                     if material:
-                        material_areas[material.name] += shape.area
-                continue
+                        material_areas[material.name] += area
 
-            # 인접 측점 쌍별 체적 산출 (평균단면법)
-            prev_station = stations[0]
-            prev_shapes = self._cross_section_with_shapes(
-                region, prev_station, targets
-            )[2]
-
-            for sta in stations[1:]:
-                cur_shapes = self._cross_section_with_shapes(region, sta, targets)[2]
-
-                # 측점 간 거리
-                length = sta - prev_station
-
-                # Shape 코드별 매칭
-                for prev_shape in prev_shapes:
-                    material = self._material_by_shape_code(prev_shape.code.name)
+            for start, end in zip(stations, stations[1:]):
+                current = self._shape_areas(region, end)
+                length = end - start
+                for code in previous.keys() | current.keys():
+                    material = self._material_by_shape_code(code.name)
                     if material is None:
                         continue
-
-                    # 같은 코드의 현재 Shape 찾기
-                    cur_shape = self._find_shape_by_code(cur_shapes, prev_shape.code)
-                    if cur_shape is None:
-                        continue
-
-                    # 평균단면법
-                    avg_area = (prev_shape.area + cur_shape.area) / 2.0
-                    volume = avg_area * length
-
-                    material_volumes[material.name] += volume
-                    # 길이 (포장 둘레 누적도 가능)
+                    area = (previous.get(code, 0.0) + current.get(code, 0.0)) / 2
+                    material_volumes[material.name] += area * length
                     material_lengths[material.name] += length
-
-                prev_station = sta
-                prev_shapes = cur_shapes
+                previous = current
 
         # 결과 조립
         quantities = []
@@ -187,71 +162,55 @@ class QuantityTakeoff:
         cut, fill = cut_fill_between(existing_surface, design_surface)
         return TakeoffResult(cut_volume=cut, fill_volume=fill)
 
-    def _cross_section_with_shapes(
-            self,
-            region: CorridorRegion,
-            station: float,
-            targets: TargetMapping,
-    ) -> tuple[tuple, tuple, tuple[Shape, ...]]:
-        """
-        측점의 횡단면 + Shape 추출.
-
-        실제로는 Assembly가 Shape을 반환해야 함.
-        현재는 링크로부터 Shape 생성 (연속 링크 그룹화).
-        """
-        points, links = region.cross_section_at(station)
-        # 링크 → Shape 변환 (shape_code 있는 링크만)
-        shapes = self._build_shapes(links)
-        return points, links, shapes
+    def _shape_areas(self, region: CorridorRegion, station: float) -> dict:
+        _, links = region.cross_section_at(station)
+        areas = defaultdict(float)
+        for shape in self._build_shapes(links):
+            areas[shape.code] += shape.area
+        return areas
 
     @staticmethod
     def _build_shapes(links) -> tuple[Shape, ...]:
-        """
-        링크 → Shape 변환 (간단화).
-
-        C3D에서는 Shape이 명시적이지만, 여기선 링크 그룹화.
-        - 같은 shape_code를 가진 연속 링크를 하나의 Shape으로 묶음.
-        """
-        shape_links = {}  # shape_code → [links]
+        """같은 코드의 링크 그래프에서 유한한 면의 경계를 순회한다."""
+        graphs = defaultdict(lambda: defaultdict(set))
+        points = {}
         for link in links:
             if link.shape_code is None:
                 continue
-            code = link.shape_code
-            if code not in shape_links:
-                shape_links[code] = []
-            shape_links[code].append(link)
+            a = (round(link.start.x, 9), round(link.start.z, 9))
+            b = (round(link.end.x, 9), round(link.end.z, 9))
+            if a == b:
+                continue
+            points.setdefault(a, link.start)
+            points.setdefault(b, link.end)
+            graph = graphs[link.shape_code]
+            graph[a].add(b)
+            graph[b].add(a)
 
         shapes = []
-        for code, grouped in shape_links.items():
-            if len(grouped) < 3:
-                # 최소 3점 필요
-                pts = []
-                seen = set()
-                for link in grouped:
-                    for p in (link.start, link.end):
-                        key = (round(p.x, 6), round(p.z, 6))
-                        if key not in seen:
-                            seen.add(key)
-                            pts.append(p)
-                if len(pts) >= 3:
-                    shapes.append(Shape(code=code, points=tuple(pts)))
-            else:
-                pts = []
-                seen = set()
-                for link in grouped:
-                    for p in (link.start, link.end):
-                        key = (round(p.x, 6), round(p.z, 6))
-                        if key not in seen:
-                            seen.add(key)
-                            pts.append(p)
-                if len(pts) >= 3:
-                    shapes.append(Shape(code=code, points=tuple(pts)))
-
+        for code, graph in graphs.items():
+            next_edge = {}
+            for vertex, neighbors in graph.items():
+                ordered = sorted(neighbors, key=lambda p: math.atan2(p[1] - vertex[1], p[0] - vertex[0]))
+                for i, neighbor in enumerate(ordered):
+                    next_edge[neighbor, vertex] = (vertex, ordered[i - 1])
+            visited = set()
+            for edge in next_edge:
+                if edge in visited:
+                    continue
+                cycle = []
+                current = edge
+                while current not in visited:
+                    visited.add(current)
+                    cycle.append(current[0])
+                    current = next_edge[current]
+                if len(cycle) < 3:
+                    continue
+                # 반시계 경계는 유한 면, 시계 경계는 바깥 면이다.
+                area2 = sum(
+                    a[0] * b[1] - a[1] * b[0]
+                    for a, b in zip(cycle, cycle[1:] + cycle[:1])
+                )
+                if area2 > 1e-12:
+                    shapes.append(Shape(code=code, points=tuple(points[key] for key in cycle)))
         return tuple(shapes)
-
-    @staticmethod
-    def _find_shape_by_code(shapes: tuple[Shape, ...], code) -> Shape | None:
-        for s in shapes:
-            if s.code == code:
-                return s
-        return None

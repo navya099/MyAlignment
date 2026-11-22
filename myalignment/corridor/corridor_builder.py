@@ -26,6 +26,7 @@ class CorridorBuilder:
             targets: TargetMapping | None = None,
             *,
             cant_curve: CantCurve | None = None,
+        baseline_name: str | None = None,
     ) -> "CorridorBuilder":
         self._regions.append(
             CorridorRegion(
@@ -36,6 +37,7 @@ class CorridorBuilder:
                 frequency=frequency,
                 target_mapping=targets or TargetMapping.empty(),
                 cant_curve=cant_curve,
+                baseline_name=baseline_name,
             )
         )
         return self
@@ -66,17 +68,13 @@ class CorridorBuilder:
         end_station: float,
         assembly,
         frequency: float = 10.0,
+        *,
+        baseline_name: str | None = None,
     ) -> "CorridorBuilder":
-        self._regions.append(
-            CorridorRegion(
-                name=name,
-                start_station=start_station,
-                end_station=end_station,
-                assembly=assembly,
-                frequency=frequency,
-            )
+        return self.add_region_with_assembly(
+            name, start_station, end_station, assembly, frequency,
+            baseline_name=baseline_name,
         )
-        return self
 
     def build(self) -> Corridor:
         sorted_regions = sorted(self._regions, key=lambda r: r.start_station)

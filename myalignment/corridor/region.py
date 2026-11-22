@@ -1,6 +1,7 @@
 # corridor/region.py
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
+import math
 
 from myalignment.assembly.assembly import Assembly
 from myalignment.assembly.codes import PointCode
@@ -23,11 +24,14 @@ class CorridorRegion:
     target_mapping: TargetMapping = field(default_factory=TargetMapping.empty)
     # Region에 CantCurve 참조 (선택)
     cant_curve: CantCurve | None = None
+    baseline_name: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self):
+        if not (math.isfinite(self.start_station) and math.isfinite(self.end_station)):
+            raise ValueError("측점은 유한해야 합니다.")
         if self.end_station < self.start_station:
             raise ValueError(f"end < start: {self.end_station} < {self.start_station}")
-        if self.frequency <= 0:
+        if not math.isfinite(self.frequency) or self.frequency <= 0:
             raise ValueError(f"frequency > 0 필요: {self.frequency}")
 
     @property
@@ -37,15 +41,18 @@ class CorridorRegion:
     @property
     def station_count(self) -> int:
         """영역 내 샘플 측점 수."""
-        return int(self.length / self.frequency) + 1
+        return math.ceil(self.length / self.frequency) + 1
 
-    def sample_stations(self) -> list[float]:
-        """영역 내 샘플 측점 리스트."""
-        n = self.station_count
-        return [
-            self.start_station + self.length * i / (n - 1)
-            for i in range(n)
-        ] if n > 1 else [self.start_station]
+    def sample_stations(self, frequency: float | None = None) -> list[float]:
+        """시작, 지정 간격, 끝 측점을 중복 없이 반환한다."""
+        step = self.frequency if frequency is None else frequency
+        if not math.isfinite(step) or step <= 0:
+            raise ValueError("frequency는 유한한 양수여야 합니다.")
+        stations = [self.start_station + i * step for i in range(math.ceil(self.length / step))]
+        if stations and stations[-1] >= self.end_station:
+            stations.pop()
+        stations.append(self.end_station)
+        return stations
 
     def cross_section_at(self, station: float):
         points, links = self.assembly.generate_cross_section(self.target_mapping)
