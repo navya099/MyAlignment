@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from cadgeom import Point2d
 
 from myalignment.alignment.alignment_side import AlignmentSide
-from myalignment.alignment.intersection import intersect_ray_with_collection
+from myalignment.alignment.intersection import intersect_ray_with_collection, intersection_stations
 from myalignment.core.station_offset import StationOffsetPoint
 
 if TYPE_CHECKING:
@@ -85,30 +85,15 @@ class AlignmentQuery:
     def intersection(
             a: "Alignment", b: "Alignment", tol: float = 1e-3
     ) -> list[StationOffsetPoint]:
-        """
-        두 선형의 교차점들 (station-offset).
-
-        전략:
-            - A의 각 Entity를 B에 투영
-            - 오프셋 ≈ 0인 점만 교차점으로 채택
-            - 중복 제거 (tol)
-        """
-        if not a.is_valid or not b.is_valid:
-            return []
-
-        candidates: list[StationOffsetPoint] = []
-
-        # A의 각 Entity 순회
-        for entity in a.entities:
-            # Entity 끝점/시작점 + 중간 샘플로 B에 투영
-            sample_stations = _sample_stations(entity, n=10)
-            for sta in sample_stations:
-                pt = a.point_at(sta)
-                pr = b.project(pt)
-                if abs(pr.offset) < tol:
-                    candidates.append(StationOffsetPoint(sta, 0.0))
-
-        # 중복 제거
+        """교차점과 요소별 겹침 구간 끝점을 첫 번째 선형의 측점으로 반환한다."""
+        if not math.isfinite(tol) or tol < 0:
+            raise ValueError("교차점 중복 제거 공차는 유한한 음이 아닌 값이어야 합니다.")
+        candidates = [
+            StationOffsetPoint(station, 0.0)
+            for first in a.entities
+            for second in b.entities
+            for station in intersection_stations(first, second)
+        ]
         return _dedupe_by_station(candidates, tol)
 
     # ================================================================
@@ -132,14 +117,6 @@ class AlignmentQuery:
 # ================================================================
 # 내부 헬퍼
 # ================================================================
-def _sample_stations(entity, n: int = 10) -> list[float]:
-    """Entity 내부 등간격 측점 샘플."""
-    return [
-        entity.start_station + entity.length * i / n
-        for i in range(n + 1)
-    ]
-
-
 def _dedupe_by_station(
         points: list[StationOffsetPoint], tol: float
 ) -> list[StationOffsetPoint]:
