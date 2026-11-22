@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from fractions import Fraction
 import math
 from typing import TYPE_CHECKING
 
@@ -25,13 +26,44 @@ def line_line_intersection(
     p1: Point2d, az1: float, p2: Point2d, az2: float,
 ) -> Point2d | None:
     """두 무한 직선의 교점. 평행이면 None."""
-    d1x, d1y = math.cos(az1), math.sin(az1)
-    d2x, d2y = math.cos(az2), math.sin(az2)
-    denom = d1x * d2y - d1y * d2x
-    if abs(denom) < 1e-12:
+    if math.remainder(az2 - az1, math.pi) == 0:
         return None
-    t = ((p2.x - p1.x) * d2y - (p2.y - p1.y) * d2x) / denom
+    d1x, d1y = math.cos(az1), math.sin(az1)
+    parameters = _line_parameters(p1, (d1x, d1y), p2, (math.cos(az2), math.sin(az2)))
+    if parameters is None:
+        return None
+    t, _ = parameters
     return Point2d(p1.x + t * d1x, p1.y + t * d1y)
+
+
+def _determinant(ax: float, ay: float, bx: float, by: float) -> float:
+    left, right = ax * by, ay * bx
+    determinant = left - right
+    # 거의 평행한 벡터의 상쇄 오차는 입력 부동소수점의 정확한 값으로 다시 계산한다.
+    if min(abs(left), abs(right)) > 0 and abs(determinant) <= max(abs(left), abs(right)) / 256:
+        return float(Fraction(ax) * Fraction(by) - Fraction(ay) * Fraction(bx))
+    return determinant
+
+
+def _coordinate_roundoff(*points: Point2d) -> float:
+    return 8 * math.ulp(max(abs(coord) for point in points for coord in (point.x, point.y)))
+
+
+def _line_parameters(
+    p1: Point2d, d1: tuple[float, float], p2: Point2d, d2: tuple[float, float],
+) -> tuple[float, float] | None:
+    """각 직선의 원점에서 교차점까지의 벡터 배율을 계산한다."""
+    d1x, d1y = d1
+    d2x, d2y = d2
+    determinant = _determinant(d1x, d1y, d2x, d2y)
+    if determinant == 0:
+        return None
+    x, y = p2.x - p1.x, p2.y - p1.y
+    return _determinant(x, y, d2x, d2y) / determinant, _determinant(x, y, d1x, d1y) / determinant
+
+
+def _within_length(distance: float, entity: LineEntity) -> bool:
+    return -_DISTANCE_EPS <= distance <= entity.length + _DISTANCE_EPS
 
 
 def _arc_center(entity: ArcEntity) -> Point2d:
@@ -53,15 +85,21 @@ def intersect_ray_with_line_entity(
     origin: Point2d, ray_az: float, entity: LineEntity,
 ) -> list[tuple[Point2d, float]]:
     """반직선과 선분이 겹치면 공통 구간의 양 끝을 반환한다."""
-    point = line_line_intersection(origin, ray_az, entity.start_coord, entity.start_azimuth)
     dx, dy = math.cos(ray_az), math.sin(ray_az)
+    parameters = None
+    if math.remainder(ray_az - entity.start_azimuth, math.pi) != 0:
+        parameters = _line_parameters(origin, (dx, dy), entity.start_coord, entity.coordinate_delta)
+
+    if parameters is not None:
+        along_ray, fraction = parameters
+        along_line = fraction * entity.length
+        if along_ray >= -_DISTANCE_EPS and _within_length(along_line, entity):
+            station = entity.start_station + max(0.0, min(entity.length, along_line))
+            return [(entity.point_at(station), station)]
+        return []
 
     def ahead(p: Point2d) -> bool:
         return (p.x - origin.x) * dx + (p.y - origin.y) * dy >= -_DISTANCE_EPS
-
-    if point is not None:
-        station = _on_entity(entity, point)
-        return [(point, station)] if station is not None and ahead(point) else []
 
     start = entity.start_coord
     if abs(dx * (start.y - origin.y) - dy * (start.x - origin.x)) > _DISTANCE_EPS:
@@ -116,11 +154,11 @@ def _bisect(function: Callable[[float], float], lo: float, hi: float, value_lo: 
 
 def _roots(
     value: Callable[[float], float], derivative_sign: Callable[[float], float],
-    start: float, end: float, count: int, tolerance: float = _DISTANCE_EPS,
+    start: float, end: float, count: int, *, roundoff: float,
 ) -> list[float]:
     """끝점과 극점을 검사하고 부호가 다른 단조 구간에서 근을 찾는다."""
     if start == end:
-        return [start] if abs(value(start)) <= tolerance else []
+        return [start] if abs(value(start)) <= _DISTANCE_EPS else []
     extrema = [start]
     left, d_left = start, derivative_sign(start)
     for i in range(1, count + 1):
@@ -134,10 +172,23 @@ def _roots(
     extrema.append(end)
 
     values = [value(station) for station in extrema]
-    hits = [station for station, height in zip(extrema, values) if abs(height) <= tolerance]
-    for lo, hi, h_lo, h_hi in zip(extrema, extrema[1:], values, values[1:]):
-        if h_lo * h_hi < 0 and min(abs(h_lo), abs(h_hi)) > tolerance:
-            hits.append(_bisect(value, lo, hi, h_lo))
+    # 반올림 오차 범위의 접점은 양쪽에 수치상 가짜 교차가 생길 수 있다.
+    contacts = {
+        i for i, (station, height) in enumerate(zip(extrema, values))
+        if abs(height) <= roundoff and (
+            0 < i < len(extrema) - 1 or abs(derivative_sign(station)) <= 1e-12
+        )
+    }
+    bracketed = set()
+    hits = []
+    for i, (h_lo, h_hi) in enumerate(zip(values, values[1:])):
+        if i not in contacts and i + 1 not in contacts and h_lo * h_hi < 0:
+            hits.append(_bisect(value, extrema[i], extrema[i + 1], h_lo))
+            bracketed.update((i, i + 1))
+    hits.extend(
+        station for i, (station, height) in enumerate(zip(extrema, values))
+        if i not in bracketed and abs(height) <= _DISTANCE_EPS
+    )
     return sorted(hits)
 
 
@@ -154,7 +205,11 @@ def intersect_ray_with_spiral_entity(
     def derivative_sign(station: float) -> float:
         return math.sin(entity.tangent_at(station) - ray_az)
 
-    stations = _roots(signed_distance, derivative_sign, entity.start_station, entity.end_station, max(1, n))
+    roundoff = _coordinate_roundoff(origin, entity.start_coord, entity.end_coord)
+    stations = _roots(
+        signed_distance, derivative_sign, entity.start_station, entity.end_station, max(1, n),
+        roundoff=roundoff,
+    )
     hits = []
     for station in stations:
         point = entity.point_at(station)
@@ -225,7 +280,11 @@ def _arc_spiral_stations(arc: ArcEntity, spiral: SpiralEntity) -> list[float]:
         point, az = spiral.point_at(station), spiral.tangent_at(station)
         return (point.x - center.x) * math.cos(az) + (point.y - center.y) * math.sin(az)
 
-    return _roots(radial_distance, derivative_sign, spiral.start_station, spiral.end_station, 200)
+    roundoff = _coordinate_roundoff(center, spiral.start_coord, spiral.end_coord)
+    return _roots(
+        radial_distance, derivative_sign, spiral.start_station, spiral.end_station, 200,
+        roundoff=roundoff + 4 * math.ulp(arc.geometry.radius),
+    )
 
 
 def _spiral_spans(curve: SpiralEntity) -> Iterator[tuple[float, float, float]]:
@@ -302,15 +361,22 @@ def _spiral_spiral_stations(a: SpiralEntity, b: SpiralEntity) -> Iterator[tuple[
                 az_a, az_b = a.tangent_at(sa), b.tangent_at(sb)
                 return math.sin(az_a - az_b) * math.cos(az_a - az) * math.cos(az_b - az)
 
-            for x in _roots(difference, derivative_sign, lo, hi, 12):
+            roundoff = _coordinate_roundoff(origin, b.start_coord, b.end_coord) + _STATION_EPS
+            for x in _roots(difference, derivative_sign, lo, hi, 12, roundoff=roundoff):
                 yield stations_at(x)
 
 
 def intersection_stations(a: AlignmentEntity, b: AlignmentEntity) -> list[float]:
     """두 유한 요소의 교차점을 첫 요소의 측점으로 반환한다."""
     if isinstance(a, LineEntity) and isinstance(b, LineEntity):
-        point = line_line_intersection(a.start_coord, a.start_azimuth, b.start_coord, b.start_azimuth)
-        candidates = (point,) if point is not None else (a.start_coord, a.end_coord, b.start_coord, b.end_coord)
+        parameters = _line_parameters(a.start_coord, a.coordinate_delta, b.start_coord, b.coordinate_delta)
+        if parameters is not None:
+            fraction_a, fraction_b = parameters
+            along_a, along_b = fraction_a * a.length, fraction_b * b.length
+            if _within_length(along_a, a) and _within_length(along_b, b):
+                return [a.start_station + max(0.0, min(a.length, along_a))]
+            return []
+        candidates = (a.start_coord, a.end_coord, b.start_coord, b.end_coord)
         return [
             station for point in candidates
             if (station := _on_entity(a, point)) is not None and _on_entity(b, point) is not None

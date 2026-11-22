@@ -33,6 +33,7 @@ class LineEntity(AlignmentEntity):
         geometry = LineGeometry(
             start_azimuth=azimuth,
             _length=length,
+            _delta=(dx, dy),
         )
         return cls(
             geometry=geometry,
@@ -40,6 +41,15 @@ class LineEntity(AlignmentEntity):
             start_coord=start_coord,
             start_azimuth=azimuth,
         )
+
+    @property
+    def coordinate_delta(self) -> tuple[float, float]:
+        x, y = self.geometry.coordinate_delta
+        angle = self._geometry_rotation
+        if angle == 0:
+            return x, y
+        ca, sa = math.cos(angle), math.sin(angle)
+        return ca * x - sa * y, sa * x + ca * y
 
     def reversed(self) -> "LineEntity":
         """뒤집힌 직선 Entity."""
@@ -54,25 +64,7 @@ class LineEntity(AlignmentEntity):
 
     def offset_by(self, distance: float) -> "LineEntity":
         """평행 이동한 직선 Entity."""
-        # offset: 좌(-)/우(+) → 월드 수직 벡터
-        nx = -math.sin(self.start_azimuth)
-        ny = math.cos(self.start_azimuth)
-        # 좌(-) → +n, 우(+) → -n
-        new_start = Point2d(
-            self.start_coord.x - distance * nx,
-            self.start_coord.y - distance * ny,
-        )
-        new_geometry = LineGeometry(
-            start_azimuth=self.start_azimuth,
-            _length=self.length,
-        )
-        return LineEntity(
-            entity_id=self.entity_id,
-            geometry=new_geometry,
-            start_station=self.start_station,
-            start_coord=new_start,
-            start_azimuth=self.start_azimuth,
-        )
+        return replace(self, start_coord=self.point_at(self.start_station, distance))
 
     def _replace(self, **kwargs) -> "LineEntity":
         return replace(self, **kwargs)

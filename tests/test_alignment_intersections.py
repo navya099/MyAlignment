@@ -139,3 +139,41 @@ def test_line_arc_secant_returns_only_hits_on_the_finite_line():
     assert _stations(whole, _single(arc)) == pytest.approx([12 - x, 12 + x])
     assert _stations(positive_only, _single(arc)) == pytest.approx([x])
     assert _stations(_single(arc), positive_only) == pytest.approx([5 * math.pi * radius / 6])
+
+
+@pytest.mark.parametrize("rise", [0.0, 1_000_000.0])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_almost_parallel_finite_lines_still_cross(rise, reverse):
+    span = 1_000_000.0
+    gap = 2 ** -22
+    base = _line((0, 0), (span, rise))
+    shallow = _line((0, -gap), (span, rise + gap))
+    if reverse:
+        shallow = shallow.reversed_alignment()
+    assert _stations(base, shallow) == pytest.approx([base.length / 2], abs=1e-7, rel=0)
+    assert _stations(shallow, base) == pytest.approx([shallow.length / 2], abs=1e-7, rel=0)
+
+
+def test_ray_finds_real_spiral_crossing_near_but_not_at_start():
+    spiral = SpiralEntity.create(Point2d(0, 0), 0, 60, 20, SpiralType.Clothoid, CurveDirection.LEFT)
+    level = 2e-9
+    hits = intersect_ray_with_spiral_entity(Point2d(0, level), 0, spiral)
+    assert len(hits) == 1
+    point, station = hits[0]
+    assert station == pytest.approx((6 * 60 * 20 * level) ** (1 / 3), abs=1e-8, rel=0)
+    assert point.y == pytest.approx(level, abs=1e-15, rel=0)
+    assert intersect_ray_with_spiral_entity(Point2d(0, 0), 0, spiral)[0][1] == 0
+
+
+def test_spiral_ray_near_tangent_keeps_both_confirmed_crossings():
+    spiral = SpiralEntity.create(Point2d(0, 0), 0, 60, 20, SpiralType.Clothoid, CurveDirection.LEFT)
+    station = 7.37
+    point, azimuth = spiral.point_at(station), spiral.tangent_at(station)
+    dx, dy = math.cos(azimuth), math.sin(azimuth)
+    height = 2e-9
+    origin = Point2d(point.x - 5 * dx - height * dy, point.y - 5 * dy + height * dx)
+    hits = intersect_ray_with_spiral_entity(origin, azimuth, spiral)
+    assert len(hits) == 2
+    assert hits[0][1] < station < hits[1][1]
+    for p, _ in hits:
+        assert dx * (p.y - origin.y) - dy * (p.x - origin.x) == pytest.approx(0, abs=1e-12)
