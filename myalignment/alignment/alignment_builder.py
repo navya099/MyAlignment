@@ -123,6 +123,13 @@ class AlignmentBuilder:
         return self
 
     def build(self) -> Alignment | RailAlignment:
+        """PI 좌표, 반경과 완화곡선 길이로 평면선형을 구성한다.
+
+        Returns:
+            일반 선형. `as_rail_alignment()`를 호출했으면 철도 선형.
+        Raises:
+            ValueError: PI 좌표가 없거나 입력 목록의 길이가 맞지 않을 때.
+        """
         if not self._coords:
             raise ValueError("PI 좌표가 없습니다.")
         if not self._radii:

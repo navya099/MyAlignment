@@ -239,7 +239,7 @@ class FeatureLine:
         Surface에서 표고를 가져와 FeatureLine 갱신.
 
         Args:
-            surface: elevation_at(x, y) 메서드를 가진 Surface.
+            surface (object): `elevation_at(x, y)` 메서드로 표고를 반환하는 객체.
         """
         new_verts = []
         for v in self.vertices:

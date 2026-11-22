@@ -2,6 +2,7 @@
 __pycache__/
 .idea/
 *.txt
+!/requirements-docs.txt
 *.INFO
 MyAlignment.egg-info/
 /site/

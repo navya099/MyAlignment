@@ -62,9 +62,19 @@ class Profile:
 
     # ---- 조회 ----
     def elevation_at(self, station: float) -> float:
+        """종단 요소에서 주어진 측점의 표고를 구한다.
+
+        Raises:
+            ValueError: 측점을 포함하는 종단 요소가 없을 때.
+        """
         return self.entities.elevation_at(station)
 
     def grade_at(self, station: float) -> float:
+        """종단 요소에서 주어진 측점의 구배를 소수 비율로 반환한다. 0.02는 2%다.
+
+        Raises:
+            ValueError: 측점을 포함하는 종단 요소가 없을 때.
+        """
         return self.entities.grade_at(station)
 
     # ---- 집계 ----

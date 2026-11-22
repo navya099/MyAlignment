@@ -19,8 +19,10 @@ python -m pip install .
 브라우저에서 문서를 보려면 저장소 루트에서 실행합니다.
 
 ```bash
-python -m pip install "mkdocs>=1.6,<2"
+python -m pip install -r requirements-docs.txt
 python -m mkdocs serve
 ```
 
 기본 주소는 `http://127.0.0.1:8000`입니다. 정적 HTML 파일은 `python -m mkdocs build --strict`로 생성하며 출력 폴더는 `site/`입니다.
+
+HTML의 **API 레퍼런스** 메뉴에서 패키지별 클래스와 공개 메서드, 속성을 검색할 수 있습니다. API 페이지는 빌드할 때 소스에서 생성합니다.

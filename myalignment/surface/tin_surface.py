@@ -145,7 +145,12 @@ class TinSurface:
         return None
 
     def elevation_at(self, x: float, y: float) -> float:
-        """점의 표고. 벽 선상에서는 방향 기준 좌측 표고를 반환한다."""
+        """TIN 위의 평면 좌표에서 표고를 반환한다.
+
+        벽 브레이크라인 위에서는 벽의 방향을 기준으로 좌측 표고를 사용한다.
+        좌표를 포함하는 삼각형이 없으면 가장 가까운 점의 표고를 사용한다.
+        TIN에 점이 없으면 0을 반환한다.
+        """
         tri = self.triangle_at(x, y)
         if tri is None:
             return self._nearest_point_z(x, y)

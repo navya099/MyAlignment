@@ -222,7 +222,17 @@ class Corridor:
         alignments: Mapping[str, Alignment],
         profiles: Mapping[str, Profile] | None = None,
     ) -> TinSurface:
-        """연결된 선형과 종단의 월드 좌표에서 표면을 추출한다."""
+        """코리더 횡단면을 월드 좌표로 변환해 TIN 표면을 추출한다.
+
+        Args:
+            spec: 추출할 코드, 표본 간격과 경계 생성 설정.
+            alignments: 기준선의 선형 이름을 키로 하는 매핑.
+            profiles: 선형에 연결된 종단을 먼저 조회하고, 없으면 이 매핑에서 조회한다.
+                기준선에 종단 이름이 없으면 기준 표고는 0이다.
+
+        Returns:
+            추출한 TIN 표면. 코리더에 등록하려면 `with_surface()`를 사용한다.
+        """
         from myalignment.corridor.surface_builder import CorridorSurfaceBuilder
 
         return CorridorSurfaceBuilder.build(self, spec, alignments=alignments, profiles=profiles)

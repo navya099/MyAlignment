@@ -131,7 +131,12 @@ class Alignment:
     # 좌표 조회 (C3D 호환)
     # ================================================================
     def point_at(self, station: float, offset: float = 0.0) -> Point2d:
-        """측점/횡거의 월드 좌표."""
+        """측점과 횡거에 해당하는 월드 평면 좌표를 반환한다.
+
+        Args:
+            station: 측점 방정식으로 변환하기 전의 기하 측점.
+            offset: 진행 방향 기준 우측은 양수, 좌측은 음수인 횡거.
+        """
         return self.entities.point_at(station, offset)
 
     def tangent_at(self, station: float) -> float:
@@ -144,7 +149,11 @@ class Alignment:
         return pr.to_station_offset()
 
     def project(self, point: Point2d) -> ProjectionResult:
-        """월드 점을 가장 가까운 Entity에 투영."""
+        """월드 좌표를 가장 가까운 선형 요소에 투영한다.
+
+        Returns:
+            투영점과 기하 측점, 부호 있는 횡거를 담은 결과.
+        """
         return self.entities.project(point)
 
     def entity_at_station(self, station: float) -> AlignmentEntity:
