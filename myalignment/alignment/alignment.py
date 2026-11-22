@@ -8,6 +8,7 @@ from myalignment.alignment.alignment_query import AlignmentQuery
 from myalignment.alignment.alignment_transaction import AlignmentTransaction
 from myalignment.alignment.label_set import AlignmentLabelSet
 from myalignment.alignment.offset_station_map import OffsetStationMap
+from myalignment.alignment.station_map import StationMap
 from myalignment.alignment.station_equation import StationEquation
 from myalignment.alignment.station_equation_collection import StationEquationCollection
 from myalignment.alignment.station_equation_type import StationEquationType
@@ -184,10 +185,12 @@ class Alignment:
         entities = self.entities.offset_by(offset)
         if entities is self.entities:
             return self
-        stations = OffsetStationMap(self.entities, entities)
+        return self._with_restationed_geometry(entities, OffsetStationMap(self.entities, entities))
+
+    def _with_restationed_geometry(self, entities: AlignmentEntityCollection, stations: StationMap) -> Self:
         result = replace(
             self, entities=entities,
-            profiles=tuple(profile._offset_stations(stations) for profile in self.profiles),
+            profiles=tuple(profile._map_stations(stations) for profile in self.profiles),
             superelevation=self.superelevation._offset_stations(stations.forward),
             station_equations=StationEquationCollection(tuple(
                 replace(equation, raw_station_back=stations.forward(equation.raw_station_back))
@@ -226,6 +229,14 @@ class Alignment:
             ),
         )
         return result._map_additional_stations(transform, reverse=reverse)
+
+    def _with_renamed_references(self, name: str) -> Self:
+        if self.name == name:
+            return self
+        return replace(
+            self, name=name,
+            corridors=tuple(corridor._rename_alignment(self.name, name) for corridor in self.corridors),
+        )
 
     def _map_additional_stations(self, transform: Callable[[float], float], *, reverse: bool) -> Self:
         return self

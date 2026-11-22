@@ -201,3 +201,69 @@ def test_alignment_takeoff_counts_only_its_baselines_in_shared_corridor():
 
     corridor_total = QuantityTakeoff([material]).compute(corridor, list(corridor.regions))
     assert corridor_total.material_quantities[0].total_quantity == pytest.approx(100)
+
+
+def test_pi_edit_and_rename_refresh_the_attached_corridor_and_preserve_owner_selection():
+    from myalignment.quantity.material import UnitType
+    from myalignment.structure.bridge import Bridge
+
+    builder = (
+        AlignmentBuilder("Axis").with_pi_coords([(0, 0), (100, 0), (100, 100)])
+        .with_radii([None, 20, None])
+    )
+    base = builder.build()
+    profile = ProfileBuilder("Grade").add_tangent(0, base.end_station, 0, 10).build()
+    lane = AssemblyBuilder().add_right(BasicLane(width=4, slope=0)).build()
+    corridor = (
+        CorridorBuilder().add_baseline("BL", "Axis", "Grade", 0, base.end_station)
+        .add_region("Full", 0, base.end_station, lane).build()
+    )
+    existing_bridge = Bridge.create("Existing", base.end_station - 10, base.end_station)
+    added_bridge = Bridge.create("New", 10, 20)
+    original = (
+        builder.with_profile(profile).with_structure(existing_bridge).with_corridor(corridor)
+        .with_metadata(materials=[Material("Paving", "PAVEMENT", UnitType.AREA)]).build()
+    )
+    with original.modify() as tx:
+        tx.rename("Renamed").update_pi_and_radius(1, radius=40).add_structure(added_bridge)
+
+    updated = tx.result
+    assert updated.end_station < original.end_station
+    assert updated.primary_corridor.baselines[0].alignment_name == "Renamed"
+    assert updated.primary_corridor.regions[0].end_station == updated.end_station
+    assert updated.profiles[0].end_station == updated.end_station
+    assert updated.profiles[0].elevation_at(updated.end_station) == pytest.approx(10)
+    assert updated.structures[0] is added_bridge
+    assert updated.structures[1].end_station == updated.end_station
+    assert updated.quantity_takeoff.material_quantities[0].total_quantity == pytest.approx(4 * updated.length)
+    assert Corridor3DRenderer.render_mesh(updated.primary_corridor, updated).primitives
+    assert original.primary_corridor.baselines[0].alignment_name == "Axis"
+    assert original.primary_corridor.end_station == original.end_station
+
+
+def test_rename_preserves_quantity_in_shared_corridor_and_updates_alignment_targets():
+    from myalignment.quantity.material import UnitType
+    from myalignment.target.mapping import TargetMapping
+    from myalignment.target.reference import TargetObjectType, TargetReference
+    from myalignment.target.target_type import TargetType
+
+    lane = AssemblyBuilder().add_right(BasicLane(width=4, slope=0)).build()
+    targets = TargetMapping((TargetReference("Width", TargetType.OFFSET, TargetObjectType.ALIGNMENT, "A"),))
+    corridor = (
+        CorridorBuilder().add_baseline("BL A", "A", "", 0, 10)
+        .add_baseline("BL B", "B", "", 0, 10)
+        .add_region_with_assembly("A region", 0, 10, lane, targets=targets, baseline_name="BL A")
+        .add_region("B region", 0, 10, lane, baseline_name="BL B").build()
+    )
+    a = (
+        AlignmentBuilder("A").with_pi_coords([(0, 0), (10, 0)]).with_corridor(corridor)
+        .with_metadata(materials=[Material("Paving", "PAVEMENT", UnitType.AREA)]).build()
+    )
+    with a.modify() as tx:
+        tx.rename("New A")
+    renamed = tx.result
+    new_corridor = renamed.primary_corridor
+    assert tuple(b.alignment_name for b in new_corridor.baselines) == ("New A", "B")
+    assert new_corridor.region_by_name("A region").target_mapping.get("Width").object_name == "New A"
+    assert renamed.quantity_takeoff.material_quantities[0].total_quantity == a.quantity_takeoff.material_quantities[0].total_quantity
+    assert Corridor3DRenderer.render_mesh(new_corridor, renamed).primitives

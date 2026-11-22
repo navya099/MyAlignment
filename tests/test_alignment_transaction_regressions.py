@@ -33,7 +33,7 @@ def test_transaction_commits_pi_and_profile_edits_without_mutating_original():
     assert result.profiles == (profile,)
     assert result.entities[1].start_coord == Point2d(50, 5)
     assert result.start_station == 100
-    assert result.raw_to_display_station(150) == 500
+    assert result.raw_to_display_station(result.entities[1].start_station) == 500
     assert alignment.name == "Axis"
     assert alignment.entities[1].start_coord == Point2d(50, 0)
     assert alignment.profiles[0].name == "Original"

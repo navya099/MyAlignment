@@ -37,6 +37,35 @@ class RailAlignment(Alignment):
                 return c.cant_at(station)
         return None
 
+    def _with_renamed_references(self, name: str) -> Self:
+        result = Alignment._with_renamed_references(self, name)
+        if result is self:
+            return self
+
+        def rename(reference: str) -> str:
+            return name if reference == self.name else reference
+
+        crossovers = []
+        for crossover in self.crossovers:
+            turnouts = tuple(
+                replace(
+                    turnout, source_alignment_name=rename(turnout.source_alignment_name),
+                    branch_alignment_name=rename(turnout.branch_alignment_name),
+                )
+                for turnout in crossover.turnouts
+            )
+            connection = rename(crossover.connecting_alignment_name)
+            branch_renamed = any(a.branch_alignment_name != b.branch_alignment_name
+                                 for a, b in zip(crossover.turnouts, turnouts))
+            crossovers.append(replace(
+                crossover, turnout1=turnouts[0], turnout2=turnouts[1], additional_turnouts=turnouts[2:],
+                source_alignment1_name=rename(crossover.source_alignment1_name),
+                source_alignment2_name=rename(crossover.source_alignment2_name),
+                connecting_alignment_name=connection,
+                geometry=None if branch_renamed or connection != crossover.connecting_alignment_name else crossover.geometry,
+            ))
+        return replace(result, crossovers=CrossoverSet(tuple(crossovers)))
+
     def _map_additional_stations(self, transform: Callable[[float], float], *, reverse: bool) -> Self:
         curves = (curve._map_stations(transform, reverse=reverse) for curve in self.cant_curves)
         return replace(

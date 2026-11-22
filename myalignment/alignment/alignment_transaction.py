@@ -18,6 +18,8 @@ from myalignment.enitity.spiral_entity import SpiralEntity
 from myalignment.exception.alignment_error import InvalidGeometryError
 from myalignment.structure.structure import Structure
 
+from myalignment.alignment.station_map import EditStationMap
+
 # 타입 힌트 전용으로만 안전하게 임포트
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
@@ -48,11 +50,35 @@ class AlignmentTransaction:
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
             if exc_type is None:
-                self._result = replace(self._original, **self._pending)
+                self._result = self._build_result()
         finally:
             self._pending.clear()
             self._active = False
         return False
+
+    def _build_result(self) -> Alignment:
+        original = self._original
+        result = original
+        entities = self._pending.get("entities")
+        if entities is not None and (
+            original.entities._pi_input is None or original.entities._pi_input != entities._pi_input
+        ):
+            result = original._with_restationed_geometry(
+                entities, EditStationMap.between(original.entities, entities),
+            )
+
+        # 명시적으로 새로 제공한 종단과 구조물은 편집 후 측점으로 해석한다.
+        if "profiles" in self._pending:
+            by_identity = {id(a): b for a, b in zip(original.profiles, result.profiles)}
+            result = replace(result, profiles=tuple(
+                by_identity.get(id(profile), profile) for profile in self._pending["profiles"]
+            ))
+        if "structures" in self._pending:
+            structures = result.structures
+            for item in self._pending["structures"]:
+                structures = structures.add(item)
+            result = replace(result, structures=structures)
+        return result._with_renamed_references(self._pending.get("name", original.name))
 
     # ---- 빌더 메서드 ----
     def update_pi_and_radius(
@@ -96,8 +122,7 @@ class AlignmentTransaction:
 
     def add_structure(self, structure: Structure) -> "AlignmentTransaction":
         """구조물 추가."""
-        structures = self._pending.get("structures", self._original.structures)
-        self._pending["structures"] = structures.add(structure)
+        self._pending.setdefault("structures", []).append(structure)
         return self
 
     def rename(self, new_name: str) -> "AlignmentTransaction":

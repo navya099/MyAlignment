@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from myalignment.profile.profileentity import ProfileEntity
 
 if TYPE_CHECKING:
-    from myalignment.alignment.offset_station_map import OffsetStationMap
+    from myalignment.alignment.station_map import StationMap
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,12 +14,12 @@ class StationMappedProfileEntity(ProfileEntity):
     """오프셋 측점에서 원본 종단의 표고와 구배를 평가한다."""
 
     _source: ProfileEntity = field(kw_only=True, repr=False)
-    _stations: OffsetStationMap = field(kw_only=True, repr=False)
+    _stations: StationMap = field(kw_only=True, repr=False)
     _direction: int = field(default=1, kw_only=True)
     _shift: float = field(default=0.0, kw_only=True)
 
     @classmethod
-    def from_entity(cls, entity: ProfileEntity, stations: OffsetStationMap) -> StationMappedProfileEntity:
+    def from_entity(cls, entity: ProfileEntity, stations: StationMap) -> StationMappedProfileEntity:
         return cls(
             entity_id=entity.entity_id, entity_type=entity.entity_type,
             start_station=stations.forward(entity.start_station),

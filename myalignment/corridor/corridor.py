@@ -7,6 +7,7 @@ from typing import Iterator, TYPE_CHECKING
 from myalignment.corridor.baseline import CorridorBaseline
 from myalignment.corridor.region import CorridorRegion
 from myalignment.corridor.surface_set import CorridorSurfaceSet
+from myalignment.target.reference import TargetObjectType
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
@@ -121,6 +122,26 @@ class Corridor:
         new_list = list(self.regions) + [region]
         new_list.sort(key=lambda r: r.start_station)
         return replace(self, regions=tuple(new_list))
+
+    def _rename_alignment(self, old_name: str, new_name: str) -> "Corridor":
+        def rename_reference(reference):
+            if reference.object_type is TargetObjectType.ALIGNMENT and reference.object_name == old_name:
+                return replace(reference, object_name=new_name)
+            return reference
+
+        def rename_region(region):
+            mapping = region.target_mapping
+            references = tuple(rename_reference(reference) for reference in mapping.references)
+            return region if references == mapping.references else region.with_targets(replace(mapping, references=references))
+
+        return replace(
+            self,
+            baselines=tuple(
+                replace(baseline, alignment_name=new_name) if baseline.alignment_name == old_name else baseline
+                for baseline in self.baselines
+            ),
+            regions=tuple(rename_region(region) for region in self.regions),
+        )
 
     def _map_alignment_stations(
         self, alignment_name: str, transform: Callable[[float], float], *, reverse: bool,

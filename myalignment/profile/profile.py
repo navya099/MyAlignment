@@ -17,7 +17,7 @@ from myalignment.profile.profiletype import ProfileType
 from myalignment.profile.station_mapped_entity import StationMappedProfileEntity
 
 if TYPE_CHECKING:
-    from myalignment.alignment.offset_station_map import OffsetStationMap
+    from myalignment.alignment.station_map import StationMap
 
 
 
@@ -107,7 +107,7 @@ class Profile:
             ),
         )
 
-    def _offset_stations(self, stations: "OffsetStationMap") -> "Profile":
+    def _map_stations(self, stations: "StationMap") -> "Profile":
         return self.with_entities(ProfileEntityCollection(tuple(
             StationMappedProfileEntity.from_entity(entity, stations) for entity in self.entities
         )))
