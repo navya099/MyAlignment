@@ -181,6 +181,40 @@ class Corridor:
             surfaces=self.surfaces if reverse or not affected else CorridorSurfaceSet(),
         )
 
+    def _replace_profiles(self, alignment_name: str, replacements: Mapping[str, str]) -> "Corridor":
+        affected = False
+        baselines = []
+        for baseline in self.baselines:
+            if baseline.alignment_name == alignment_name and baseline.profile_name in replacements:
+                baseline = replace(baseline, profile_name=replacements[baseline.profile_name])
+                affected = True
+            baselines.append(baseline)
+
+        regions = []
+        for region in self.regions:
+            mapping = region.target_mapping
+            if any(
+                ref.object_type is TargetObjectType.PROFILE and ref.object_name in replacements
+                for ref in mapping.references
+            ):
+                baseline = self.baseline_for_region(region)
+                if baseline is None or baseline.alignment_name == alignment_name:
+                    references = tuple(
+                        replace(ref, object_name=replacements[ref.object_name])
+                        if ref.object_type is TargetObjectType.PROFILE and ref.object_name in replacements
+                        else ref
+                        for ref in mapping.references
+                    )
+                    region = region.with_targets(replace(mapping, references=references))
+                    affected = True
+            regions.append(region)
+
+        if not affected:
+            return self
+        return replace(
+            self, baselines=tuple(baselines), regions=tuple(regions), surfaces=CorridorSurfaceSet(),
+        )
+
     def build_surface(
         self,
         spec: CorridorSurfaceSpec,

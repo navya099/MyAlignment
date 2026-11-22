@@ -267,3 +267,48 @@ def test_rename_preserves_quantity_in_shared_corridor_and_updates_alignment_targ
     assert new_corridor.region_by_name("A region").target_mapping.get("Width").object_name == "New A"
     assert renamed.quantity_takeoff.material_quantities[0].total_quantity == a.quantity_takeoff.material_quantities[0].total_quantity
     assert Corridor3DRenderer.render_mesh(new_corridor, renamed).primitives
+
+
+@pytest.mark.parametrize("new_name", ["FG original", "FG revised"])
+def test_replacing_profile_updates_references_and_invalidates_surface_cache(new_name):
+    from myalignment.profile.profiletype import ProfileType
+    from myalignment.target.mapping import TargetMapping
+    from myalignment.target.reference import TargetObjectType, TargetReference
+    from myalignment.target.target_type import TargetType
+
+    original_profile = ProfileBuilder("FG original", ProfileType.FG).add_tangent(0, 10, 20, 21).build()
+    replacement = ProfileBuilder(new_name, ProfileType.FG).add_tangent(0, 10, 25, 26).build()
+    lane = AssemblyBuilder().add_right(BasicLane(width=4, slope=0)).build()
+    targets = TargetMapping((
+        TargetReference("Elevation", TargetType.ELEVATION, TargetObjectType.PROFILE, original_profile.name),
+    ))
+    corridor = (
+        CorridorBuilder().add_baseline("A", "Axis", original_profile.name, 0, 10)
+        .add_baseline("B", "Other", original_profile.name, 0, 10)
+        .add_region_with_assembly("Axis lane", 0, 10, lane, targets=targets, baseline_name="A")
+        .add_region_with_assembly("Other lane", 0, 10, lane, targets=targets, baseline_name="B")
+        .build()
+    )
+    builder = AlignmentBuilder("Axis").with_pi_coords([(0, 0), (10, 0)]).with_profile(original_profile)
+    axis = builder.build()
+    other = AlignmentBuilder("Other").with_pi_coords([(0, 10), (10, 10)]).with_profile(original_profile).build()
+    surface = corridor.build_surface(CorridorSurfaceSpec(), alignments={"Axis": axis, "Other": other})
+    axis = axis.add_corridor(corridor.with_surface(surface))
+
+    with axis.modify() as tx:
+        tx.update_profile(replacement)
+    revised = tx.result
+    new_corridor = revised.primary_corridor
+
+    assert revised.fg_profile is replacement
+    assert new_corridor.baselines[0].profile_name == new_name
+    assert new_corridor.baselines[1] is corridor.baselines[1]
+    assert new_corridor.region_by_name("Axis lane").target_mapping.get("Elevation").object_name == new_name
+    assert new_corridor.region_by_name("Other lane") is corridor.region_by_name("Other lane")
+    assert not new_corridor.surfaces
+    assert axis.primary_corridor.surfaces.get(surface.name) is surface
+    scene = Corridor3DRenderer.render_mesh(new_corridor, revised)
+    assert scene.primitives
+    assert min(p.z for mesh in scene.primitives for p in mesh.points) == pytest.approx(24.9)
+    rebuilt = new_corridor.build_surface(CorridorSurfaceSpec(), alignments={"Axis": revised, "Other": other})
+    assert rebuilt.elevation_at(5, -1) == pytest.approx(25.5)

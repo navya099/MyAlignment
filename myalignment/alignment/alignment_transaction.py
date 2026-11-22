@@ -69,10 +69,18 @@ class AlignmentTransaction:
 
         # 명시적으로 새로 제공한 종단과 구조물은 편집 후 측점으로 해석한다.
         if "profiles" in self._pending:
+            profiles = self._pending["profiles"]
             by_identity = {id(a): b for a, b in zip(original.profiles, result.profiles)}
-            result = replace(result, profiles=tuple(
-                by_identity.get(id(profile), profile) for profile in self._pending["profiles"]
-            ))
+            replacements = {
+                old.name: new.name for old, new in zip(original.profiles, profiles) if old is not new
+            }
+            result = replace(
+                result,
+                profiles=tuple(by_identity.get(id(profile), profile) for profile in profiles),
+                corridors=tuple(
+                    corridor._replace_profiles(original.name, replacements) for corridor in result.corridors
+                ),
+            )
         if "structures" in self._pending:
             structures = result.structures
             for item in self._pending["structures"]:
