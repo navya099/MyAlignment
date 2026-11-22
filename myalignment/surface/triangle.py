@@ -79,6 +79,10 @@ class Triangle:
         """
         p1, p2, p3 = self.vertices(points)
 
+        det = (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)
+        if abs(det) < 1e-12:
+            return False
+
         d1 = (x - p2.x) * (p1.y - p2.y) - (p1.x - p2.x) * (y - p2.y)
         d2 = (x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (y - p3.y)
         d3 = (x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (y - p1.y)

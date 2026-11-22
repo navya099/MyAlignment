@@ -190,3 +190,45 @@ def test_cut_fill_at_constant_elevation_splits_a_crossing_face():
 
     with pytest.raises(ValueError, match="유한"):
         existing.volume_above_elevation(float("nan"))
+
+
+@pytest.mark.parametrize("right_elevation", [90, 110])
+def test_wall_breakline_preserves_independent_bank_elevations_in_tin(right_elevation):
+    from dataclasses import replace
+
+    points = [(x, y, right_elevation if y < 5 else 100) for x, y, _ in _CORNERS]
+    wall = Breakline.from_coords(
+        [(0, 5, 100), (10, 5, 100)], name="Wall", breakline_type=BreaklineType.WALL,
+    )
+    wall = replace(wall, right_elevations=(right_elevation,) * 2)
+    direct = TinSurface.from_points(points, breaklines=BreaklineSet((wall,)))
+    built = TinSurfaceBuilder().add_points(points).add_breakline(wall).build()
+    assert built.points == direct.points
+    assert built.triangles == direct.triangles
+    assert direct.elevation_at(5, 4.9) == pytest.approx(right_elevation)
+    assert direct.elevation_at(5, 5.1) == pytest.approx(100)
+    assert direct.elevation_at(5, 5) == pytest.approx(100)
+    assert direct.slope_at(5, 4.9) == pytest.approx((0, 0, 0))
+    assert direct.area_2d == pytest.approx(100)
+    assert direct.area_3d == pytest.approx(200)
+
+    expected = (500, 0) if right_elevation > 100 else (0, 500)
+    assert direct.volume_above_elevation(100) == pytest.approx(expected)
+    assert direct.without_breakline("Wall").points == TinSurface.from_points(points).points
+
+
+def test_wall_endpoint_can_taper_to_meet_the_interior_tin():
+    from dataclasses import replace
+
+    wall = Breakline.from_coords(
+        [(0, 5, 100), (7, 5, 100)], breakline_type=BreaklineType.WALL,
+    )
+    tapered = replace(wall, right_elevations=(90, 100))
+    tin = TinSurface.from_points(_CORNERS, breaklines=BreaklineSet((tapered,)))
+    assert tin.area_2d == pytest.approx(100)
+    assert tin.elevation_at(7, 5) == pytest.approx(100)
+    faces = [face for face in tin.triangles if face.area_2d(tin.points) == 0]
+    assert sum(face.area_3d(tin.points) for face in faces) == pytest.approx(35)
+
+    with pytest.raises(ValueError, match="내부 끝점"):
+        TinSurface.from_points(_CORNERS, breaklines=BreaklineSet((replace(wall, right_elevations=(90, 90)),)))

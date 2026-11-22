@@ -48,16 +48,16 @@ class ConstrainedDelaunayTriangulator:
                     indices[key] = len(all_points)
                     all_points.append(TinPoint(vertex.x, vertex.y, z))
                 vertices.append(indices[key])
-            segments.extend(
-                (line, a, b, va.z, vb.z)
-                for a, b, va, vb in zip(vertices, vertices[1:], line.vertices, line.vertices[1:])
-                if a != b
-            )
+            for i, (a, b) in enumerate(zip(vertices, vertices[1:])):
+                if a != b:
+                    segments.append((line, i, a, b))
 
         constraints = set()
         elevations = {}
-        for line, a, b, start_z, end_z in segments:
+        wall_edges = {}
+        for line, segment, a, b in segments:
             start, end = all_points[a], all_points[b]
+            start_z, end_z = line.vertices[segment].z, line.vertices[segment + 1].z
             interior = []
             min_x, max_x = sorted((start.x, end.x))
             min_y, max_y = sorted((start.y, end.y))
@@ -74,6 +74,16 @@ class ConstrainedDelaunayTriangulator:
             chain = [(0.0, a), *sorted(interior), (1.0, b)]
             for (_, u), (_, v) in zip(chain, chain[1:]):
                 constraints.add(_edge(u, v))
+            if line.breakline_type == BreaklineType.WALL and line.right_elevations:
+                right_start, right_end = line.right_elevations[segment:segment + 2]
+                for (t0, u), (t1, v) in zip(chain, chain[1:]):
+                    right_u = right_start + t0 * (right_end - right_start)
+                    right_v = right_start + t1 * (right_end - right_start)
+                    edge = _edge(u, v)
+                    banks = (u, v, right_u, right_v)
+                    if edge in wall_edges and wall_edges[edge] != banks:
+                        raise ValueError("겹치는 수직 벽 Breakline의 방향 또는 표고가 일치하지 않습니다.")
+                    wall_edges[edge] = banks
             if line.breakline_type != BreaklineType.PROXIMITY:
                 for param, index in chain:
                     z = start_z + param * (end_z - start_z)
@@ -90,6 +100,8 @@ class ConstrainedDelaunayTriangulator:
         mesh = _ConstraintMesh(all_points, triangles)
         for edge in sorted(constraints):
             mesh.force_edge(edge, constraints)
+        if wall_edges:
+            mesh.apply_wall_banks(wall_edges)
         return mesh.triangles, all_points
 
     @staticmethod
@@ -179,3 +191,82 @@ class _ConstraintMesh:
             for new_edge in _triangle_edges(new_triangle):
                 self.faces_by_edge[new_edge].add(face)
         return opposite
+
+
+    def apply_wall_banks(
+        self, walls: dict[tuple[int, int], tuple[int, int, float, float]],
+    ) -> None:
+        """벽을 가로지르지 않는 정점 주위의 면에 같은 표고를 사용한다."""
+        wall_vertices = {vertex for edge in walls for vertex in edge}
+        incident = defaultdict(set)
+        neighbors = defaultdict(lambda: defaultdict(set))
+        levels = defaultdict(lambda: defaultdict(list))
+        for edge, faces in self.faces_by_edge.items():
+            for vertex in wall_vertices.intersection(edge):
+                incident[vertex].update(faces)
+                if edge not in walls and len(faces) == 2:
+                    first, second = faces
+                    neighbors[vertex][first].add(second)
+                    neighbors[vertex][second].add(first)
+
+        for edge, (u, v, right_u, right_v) in walls.items():
+            a, b = self.points[u], self.points[v]
+            for face in self.faces_by_edge[edge]:
+                tri = self.triangles[face]
+                c = self.points[next(i for i in (tri.a, tri.b, tri.c) if i not in edge)]
+                is_left = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) > 0
+                levels[u][face].append(a.z if is_left else right_u)
+                levels[v][face].append(b.z if is_left else right_v)
+
+        bank_indices = {}
+
+        def at_level(index, z):
+            point = self.points[index]
+            if abs(point.z - z) <= 1e-6:
+                return index
+            key = (index, z)
+            if key not in bank_indices:
+                bank_indices[key] = len(self.points)
+                self.points.append(TinPoint(point.x, point.y, z))
+            return bank_indices[key]
+
+        face_vertices = defaultdict(dict)
+        for vertex in sorted(wall_vertices):
+            remaining = set(incident[vertex])
+            while remaining:
+                component = []
+                queue = [remaining.pop()]
+                for face in queue:
+                    component.append(face)
+                    adjacent = remaining & neighbors[vertex][face]
+                    queue.extend(sorted(adjacent))
+                    remaining.difference_update(adjacent)
+                elevations = [z for face in component for z in levels[vertex][face]]
+                if not elevations:
+                    continue
+                if max(elevations) - min(elevations) > 1e-6:
+                    raise ValueError(
+                        "수직 벽 끝점이나 접합부에서 인접 면의 표고가 충돌합니다. "
+                        "내부 끝점에서는 양쪽 표고를 일치시키세요."
+                    )
+                index = at_level(vertex, elevations[0])
+                for face in component:
+                    face_vertices[face][vertex] = index
+
+        for face, mapping in face_vertices.items():
+            tri = self.triangles[face]
+            self.triangles[face] = Triangle(*sorted(mapping.get(i, i) for i in (tri.a, tri.b, tri.c)))
+
+        for u, v, right_u, right_v in walls.values():
+            ru, rv = at_level(u, right_u), at_level(v, right_v)
+            pairs = ((u, v, rv), (u, rv, ru))
+            a, b = self.points[u], self.points[v]
+            gap_u, gap_v = right_u - a.z, right_v - b.z
+            if ru != u and rv != v and gap_u * gap_v < 0:
+                t = gap_u / (gap_u - gap_v)
+                crossing = len(self.points)
+                self.points.append(TinPoint(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), a.z + t * (b.z - a.z)))
+                pairs = ((u, ru, crossing), (v, rv, crossing))
+            for triangle in pairs:
+                if len(set(triangle)) == 3:
+                    self.triangles.append(Triangle(*sorted(triangle)))

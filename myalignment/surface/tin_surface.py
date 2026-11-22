@@ -133,7 +133,7 @@ class TinSurface:
         return None
 
     def elevation_at(self, x: float, y: float) -> float:
-        """점의 표고 — Breakline 위면 Breakline 표고 우선."""
+        """점의 표고. 벽 선상에서는 방향 기준 좌측 표고를 반환한다."""
         # 1) Boundary 체크
         if len(self.boundaries) > 0 and not self.boundaries.contains_point(x, y):
             return self._nearest_point_z(x, y)

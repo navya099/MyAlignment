@@ -15,7 +15,8 @@ class Breakline:
     C3D의 SurfaceBreakline과 호환.
     - 열린 선 (닫힌 선도 가능).
     - 삼각분할 강제.
-    - Wall 타입은 좌/우 표고 별도.
+    - Wall 타입은 방향 기준 좌/우 표고를 따로 저장한다.
+    - 지표면 내부에서 끝나는 벽은 끝점에서 좌/우 표고가 같아야 한다.
     """
     name: str = ""
     breakline_type: BreaklineType = BreaklineType.STANDARD
@@ -35,6 +36,8 @@ class Breakline:
                         f"Wall right_elevations 개수 불일치: "
                         f"{len(self.right_elevations)} vs {len(self.vertices)}"
                     )
+                if not all(math.isfinite(z) for z in self.right_elevations):
+                    raise ValueError("Wall 우측 표고는 유한해야 합니다.")
 
     @property
     def length(self) -> float:
