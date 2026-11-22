@@ -36,7 +36,7 @@ def test_symmetric_spiral():
     """대칭 완화곡선 (SCS)."""
     col = build_alignment_entities(
         coords=[(0, 0), (100, 0), (200, 100)],
-        radii=[None, 300, None],
+        radii=[None, 150, None],
         spiral_type=SpiralType.Clothoid,
         entry_lengths=[0, 30, 0],
         exit_lengths=[0, 30, 0],
@@ -51,7 +51,7 @@ def test_asymmetric_spiral():
     """비대칭 완화곡선."""
     col = build_alignment_entities(
         coords=[(0, 0), (100, 0), (200, 100)],
-        radii=[None, 300, None],
+        radii=[None, 150, None],
         spiral_type=SpiralType.Clothoid,
         entry_lengths=[0, 20, 0],
         exit_lengths=[0, 40, 0],
@@ -101,20 +101,21 @@ def test_spiral_type_affects_geometry():
     """Clothoid vs JapaneseCubic → 좌표 차이."""
     col_c = build_alignment_entities(
         coords=[(0, 0), (100, 0), (200, 100)],
-        radii=[None, 300, None],
+        radii=[None, 150, None],
         spiral_type=SpiralType.Clothoid,
         entry_lengths=[0, 30, 0],
         exit_lengths=[0, 30, 0],
     )
     col_j = build_alignment_entities(
         coords=[(0, 0), (100, 0), (200, 100)],
-        radii=[None, 300, None],
+        radii=[None, 150, None],
         spiral_type=SpiralType.JapaneseCubic,
         entry_lengths=[0, 30, 0],
         exit_lengths=[0, 30, 0],
     )
-    # 끝점이 미묘하게 달라야 함
-    assert col_c.end_coord.distance_to(col_j.end_coord) > 1e-9
+    # 완화곡선 형상은 달라도 지정 종점은 유지된다.
+    assert col_c[1].end_coord.distance_to(col_j[1].end_coord) > 1e-9
+    assert col_c.end_coord.distance_to(col_j.end_coord) < 1e-9
 
 
 def test_start_station_offset():

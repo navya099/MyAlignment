@@ -78,6 +78,11 @@ class AlignmentEntityCollection:
         for e in self.entities:
             if e.start_station <= station <= e.end_station:
                 return e
+        # Reversing the order of summed lengths can shift the endpoint by a few ulps.
+        if self.entities:
+            for entity, endpoint in ((self.entities[0], self.start_station), (self.entities[-1], self.end_station)):
+                if math.isfinite(station) and abs(station - endpoint) <= min(1e-6, 8 * math.ulp(endpoint)):
+                    return entity
         raise ValueError(f"station {station}이 Entity 범위 밖")
 
     def point_at(self, station: float, offset: float = 0.0) -> Point2d:

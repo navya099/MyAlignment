@@ -6,6 +6,7 @@ from cadgeom import Point2d
 from myalignment.alignment.alignment_builder import AlignmentBuilder
 from myalignment.alignment.alignment_query import AlignmentQuery
 from myalignment.alignment.alignment_side import AlignmentSide
+from myalignment.enitity.spiral_entity import SpiralEntity
 from myalignment.enum.spiraltype import SpiralType
 from myalignment.ipdata.ipdata import PICurveSpec
 
@@ -108,7 +109,7 @@ def test_both_chooses_shortest():
 def test_distance_to_arc():
     a = _make([(0, 0), (200, 0)], [None, None])
     # 수정 후 (예시: y값을 다르게 주어 꺾이도록 설정)
-    b = _make([(50, 20), (100, 50), (150, 20)], [None, 100, None])
+    b = _make([(50, 20), (100, 50), (150, 20)], [None, 80, None])
 
     dist, sta = a.distance_to_alignment(100.0, b)
     # a의 station 100 = (100, 0). b는 위쪽 원곡선
@@ -122,13 +123,14 @@ def test_distance_to_spiral():
     b = (
         AlignmentBuilder()
         .with_pi_coords([(50, 20), (100, 20), (150, 50)])
-        .with_radii([None, 300, None])
+        .with_radii([None, 100, None])
         .with_spiral_lengths(entry=[0, 30, 0], exit=[0, 30, 0])
         .build()
     )
 
-    dist, sta = a.distance_to_alignment(100.0, b)
-    assert abs(dist) > 0
+    dist, sta = a.distance_to_alignment(75.0, b)
+    assert dist > 0
+    assert isinstance(b.entity_at_station(sta), SpiralEntity)
 
 
 # ---- 교차점 탐색 ----

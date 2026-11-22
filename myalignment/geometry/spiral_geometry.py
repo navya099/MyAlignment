@@ -63,103 +63,70 @@ class SpiralGeometry(Geometry):
                 and self.direction != CurveDirection.NULL
         )
 
+    def _centerline(self, s: float) -> tuple[float, float]:
+        sign = 1 if self.direction == CurveDirection.LEFT else -1
+        if not self.is_reversed:
+            x, y = self._spiral_xy(s, self.spiral_type)
+            return x, sign * y
+
+        # 역방향 곡선은 반대쪽 끝에서 같은 궤적을 거슬러 올라간다.
+        end_x, end_y = self._spiral_xy(self.length, self.spiral_type)
+        x, y = self._spiral_xy(self.length - s, self.spiral_type)
+        angle = sign * self._spiral_tangent(self.length)
+        dx, dy = end_x - x, -sign * (end_y - y)
+        ca, sa = math.cos(angle), math.sin(angle)
+        return dx * ca - dy * sa, dx * sa + dy * ca
+
     def point_at(self, s: float, offset: float = 0.0) -> Point2d:
-        """로컬 측점 s의 좌표."""
         s = self._check_s(s)
-        lx, ly = self._spiral_xy(s, self.spiral_type)
-
-        if self.direction == CurveDirection.RIGHT:
-            ly = -ly  # y 반전 (좌→우)
-
-        if offset != 0.0:
-            # 접선 방향의 수직으로 offset
-            tang = self.tangent_at(s)
-            nx = -math.sin(tang)
-            ny = math.cos(tang)
-            lx += offset * nx
-            ly += offset * ny
-
-        return self._to_local_point(lx, ly)
+        x, y = self._centerline(s)
+        angle = self.tangent_at(s) - self.start_azimuth
+        return self._to_local_point(x + offset * math.sin(angle), y - offset * math.cos(angle))
 
     def tangent_at(self, s: float) -> float:
-        """접선 방위각 (로컬)."""
         s = self._check_s(s)
-        t = self._spiral_tangent(s)
-        sign = +1.0 if self.direction == CurveDirection.LEFT else -1.0
-        return self.start_azimuth + sign * t
+        sign = 1 if self.direction == CurveDirection.LEFT else -1
+        if self.is_reversed:
+            angle = self._spiral_tangent(self.length) - self._spiral_tangent(self.length - s)
+        else:
+            angle = self._spiral_tangent(s)
+        return self.start_azimuth + sign * angle
 
     def project_at(self, p: Point2d) -> ProjectionResult:
-        """완화곡선은 해석적 역변환이 어려워 수치 탐색."""
+        """동일한 중심선에서 최근접 측점을 수치적으로 찾는다."""
         lx, ly = self._to_local_coords(p)
 
-        # 이분법으로 최근접 s 탐색 (샘플링 → 이분법)
-        n = 100
-        best_s, best_d = 0.0, float("inf")
-        prev_s = 0.0
-        prev_pt = self._spiral_xy(prev_s, self.spiral_type)
-        prev_d = math.hypot(lx - prev_pt[0], ly - prev_pt[1])
+        def distance(s):
+            x, y = self._centerline(s)
+            return math.hypot(lx - x, ly - y)
 
-        for i in range(1, n + 1):
-            s = self.length * i / n
-            pt = self._spiral_xy(s, self.spiral_type)
-            d = math.hypot(lx - pt[0], ly - pt[1])
-            if d < best_d:
-                best_s, best_d = s, d
-
-            if prev_d < d:
-                # 이분법
-                lo, hi = prev_s, s
-                for _ in range(40):
-                    mid = 0.5 * (lo + hi)
-                    mp = self._spiral_xy(mid, self.spiral_type)
-                    md = math.hypot(lx - mp[0], ly - mp[1])
-                    if md < best_d:
-                        best_s, best_d = mid, md
-                    if md > prev_d and md > d:
-                        break
-                    if md < prev_d:
-                        prev_d, prev_s = md, mid
-                        lo = mid
-                    else:
-                        hi = mid
-
-            prev_s, prev_pt, prev_d = s, pt, d
-
-        s = best_s
-        proj_local = self._spiral_xy(s, self.spiral_type)
-        proj_world = self._to_local_point(proj_local[0], proj_local[1])
-
-        # offset: 로컬 점에서 프로젝션 점까지의 부호 거리
-        tang = self.tangent_at(s)
-        nx = -math.sin(tang)
-        ny = math.cos(tang)
-        dx, dy = lx - proj_local[0], ly - proj_local[1]
-        offset = dx * nx + dy * ny
-        distance = abs(offset)
-
-        is_on = (0.0 <= s <= self.length)
-
+        samples = [self.length * i / 100 for i in range(101)]
+        best = min(range(len(samples)), key=lambda i: distance(samples[i]))
+        lo, hi = samples[max(0, best - 1)], samples[min(100, best + 1)]
+        for _ in range(65):
+            a, b = lo + (hi - lo) / 3, hi - (hi - lo) / 3
+            if distance(a) <= distance(b):
+                hi = b
+            else:
+                lo = a
+        s = min((samples[best], (lo + hi) / 2), key=distance)
+        px, py = self._centerline(s)
+        dx, dy = lx - px, ly - py
+        tangent = self.tangent_at(s)
+        angle = tangent - self.start_azimuth
+        along = dx * math.cos(angle) + dy * math.sin(angle)
+        on_entity = not ((s == 0 and along < -1e-9) or (s == self.length and along > 1e-9))
         return ProjectionResult(
-            point=proj_world,
-            station=s,
-            offset=offset,
-            distance=distance,
-            tangent=tang,
-            is_on_entity=is_on,
+            point=self._to_local_point(px, py), station=s,
+            offset=dx * math.sin(angle) - dy * math.cos(angle),
+            distance=math.hypot(dx, dy), tangent=tangent, is_on_entity=on_entity,
         )
 
     def reversed(self) -> "SpiralGeometry":
-        """뒤집힌 완화곡선."""
-        new_dir = (
-            CurveDirection.RIGHT if self.direction == CurveDirection.LEFT
-            else CurveDirection.LEFT
-        )
-        theta = self._spiral_tangent(self.length)
+        direction = CurveDirection.RIGHT if self.direction == CurveDirection.LEFT else CurveDirection.LEFT
         return SpiralGeometry(
-            start_azimuth=(self.start_azimuth + theta + math.pi) % (2 * math.pi),
-            params=self.params,
-            direction=new_dir,
-            is_reversed=not self.is_reversed,
+            start_azimuth=(self.tangent_at(self.length) + math.pi) % math.tau,
+            params=self.params, direction=direction, is_reversed=not self.is_reversed,
         )
 
     def offset_by(self, distance: float) -> "SpiralGeometry":
@@ -228,17 +195,24 @@ class SpiralGeometry(Geometry):
 
     def _spiral_tangent(self, s: float) -> float:
         """로컬 접선각 (rad, 부호 없음)."""
-        stype = self.spiral_type
-        if stype in (SpiralType.Clothoid, SpiralType.OffsetClothoid):
-            # θ = s² / (2·A²) = s² / (2·R·L)
-            return s * s / (2 * self.params.radius * self.params.length)
-        if stype in (SpiralType.JapaneseCubic, SpiralType.CubicParabola):
-            # θ = s² / (2·R·L) (근사)
-            return s * s / (2 * self.params.radius * self.params.length)
-        if stype in (SpiralType.SineHalfWave,):
-            theta_max = self.params.length / (2 * self.params.radius)
-            return (theta_max / 2) * (1 - math.cos(2 * math.pi * s / self.params.length))
-        raise NotImplementedError(stype)
+        kind = self.spiral_type
+        radius, length = self.radius, self.length
+        if kind in (SpiralType.Clothoid, SpiralType.OffsetClothoid):
+            angle = s * s / (2 * radius * length)
+            dx = 1 - angle ** 2 / 2 + angle ** 4 / 24
+            dy = angle - angle ** 3 / 6
+        elif kind in (SpiralType.JapaneseCubic, SpiralType.OffsetJapaneseCubic):
+            dx = 1 - 3 * s ** 2 / (40 * radius ** 2)
+            dy = s ** 2 / (2 * radius * length)
+        elif kind in (SpiralType.CubicParabola, SpiralType.OffsetCubicParabola):
+            dx, dy = 1, s ** 2 / (2 * radius * length)
+        elif kind in (SpiralType.SineHalfWave, SpiralType.OffsetHalfWaveLenDimnTangent):
+            phase = math.tau * s / length
+            amplitude = length / (4 * radius)
+            dx, dy = 1 - amplitude * math.cos(phase), amplitude * math.sin(phase)
+        else:
+            raise NotImplementedError(kind)
+        return math.atan2(dy, dx)
 
     # ---- 로컬 변환 ----
     def _to_local_point(self, lx: float, ly: float) -> Point2d:

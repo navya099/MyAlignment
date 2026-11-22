@@ -60,23 +60,12 @@ class ArcGeometry(Geometry):
 
         sign = +1.0 if self.direction == CurveDirection.LEFT else -1.0
 
-        # 로컬 중심: (0, sign*radius)
-        cx, cy = 0.0, sign * self._radius
-
-        # 로컬 점 (원 위)
-        lx = cx + self._radius * math.sin(theta) * sign * sign  # = cx + r*sin(theta)
-        ly = cy - sign * self._radius * math.cos(theta)
-
-        # offset 적용 (방사 방향)
-        if offset != 0.0:
-            # 방사 단위 벡터
-            rx, ry = lx - cx, ly - cy
-            r_len = math.hypot(rx, ry)
-            if r_len > 0:
-                lx += offset * rx / r_len
-                ly += offset * ry / r_len
-
-        return self._to_local_point(lx, ly)
+        # 양의 횡거는 진행 방향 오른쪽이다.
+        radius = self._radius + sign * offset
+        return self._to_local_point(
+            radius * math.sin(theta),
+            sign * (self._radius - radius * math.cos(theta)),
+        )
 
     def tangent_at(self, s: float) -> float:
         """접선 방위각 (로컬 기준)."""
@@ -89,76 +78,25 @@ class ArcGeometry(Geometry):
         """로컬 점 p를 원호에 투영."""
         lx, ly = self._to_local_coords(p)
 
-        sign = +1.0 if self.direction == CurveDirection.LEFT else -1.0
-        cx, cy = 0.0, sign * self._radius
-
-        # 중심→점 벡터
-        vx, vy = lx - cx, ly - cy
-        d = math.hypot(vx, vy)
-
-        if d < 1e-12:
-            # 중심점 (degenerate)
-            return ProjectionResult(
-                point=self._to_local_point(0.0, 0.0),
-                station=0.0,
-                offset=0.0,
-                distance=self._radius,
-                tangent=self.tangent_at(0.0),
-                is_on_entity=False,
-            )
-
-        # 점의 극각 (중심 기준)
-        ang = math.atan2(vy, vx)
-
-        # 시작/끝 반지름 각도
-        start_ang = math.atan2(-sign * self._radius, 0.0)  # = -sign*π/2
-        end_ang = start_ang + sign * self._delta
-
-        # ang를 호 범위로 정규화
-        def normalize(a: float, lo: float, hi: float) -> float:
-            while a < lo:
-                a += 2 * math.pi
-            while a > hi:
-                a -= 2 * math.pi
-            return a
-
-        if sign > 0:  # LEFT
-            lo, hi = start_ang, start_ang + self._delta
-        else:  # RIGHT
-            lo, hi = start_ang - self._delta, start_ang
-
-        ang_norm = normalize(ang, lo, hi)
-        is_on = (lo <= ang_norm <= hi)
-
-        if not is_on:
-            # 시작/끝 중 가까운 쪽으로 클램프
-            d_start = math.hypot(lx - 0.0, ly - 0.0)
-            d_end = math.hypot(lx - self._local_end()[0], ly - self._local_end()[1])
-            if d_start <= d_end:
-                ang_norm = start_ang
-                s = 0.0
-            else:
-                ang_norm = end_ang
-                s = self.length
+        sign = 1 if self.direction == CurveDirection.LEFT else -1
+        cy = sign * self._radius
+        at_center = math.hypot(lx, ly - cy) < 1e-12
+        theta = math.atan2(lx, self._radius - sign * ly)
+        on_arc = not at_center and -1e-12 <= theta <= self._delta + 1e-12
+        if on_arc:
+            theta = max(0.0, min(self._delta, theta))
         else:
-            s = abs(ang_norm - start_ang) * self._radius
+            ex, ey = self._local_end()
+            theta = self._delta if not at_center and math.hypot(lx - ex, ly - ey) < math.hypot(lx, ly) else 0.0
 
-        # 투영점 (로컬)
-        proj_local_x = cx + self._radius * math.cos(ang_norm)
-        proj_local_y = cy + self._radius * math.sin(ang_norm)
-        proj_world = self._to_local_point(proj_local_x, proj_local_y)
-
-        # offset: 반지름 - 거리 (좌-, 우+)
-        offset = self._radius - d
-        distance = abs(offset)
-
+        s = theta * self._radius
+        px = self._radius * math.sin(theta)
+        py = cy * (1 - math.cos(theta))
+        dx, dy = lx - px, ly - py
+        offset = dx * math.sin(theta) * sign - dy * math.cos(theta)
         return ProjectionResult(
-            point=proj_world,
-            station=s,
-            offset=offset,
-            distance=distance,
-            tangent=self.tangent_at(s),
-            is_on_entity=is_on,
+            point=self._to_local_point(px, py), station=s, offset=offset,
+            distance=math.hypot(dx, dy), tangent=self.tangent_at(s), is_on_entity=on_arc,
         )
 
     def reversed(self) -> "ArcGeometry":
@@ -168,7 +106,7 @@ class ArcGeometry(Geometry):
             else CurveDirection.LEFT
         )
         return ArcGeometry(
-            start_azimuth=(self.start_azimuth + self._delta + math.pi) % (2 * math.pi),
+            start_azimuth=(self.tangent_at(self.length) + math.pi) % math.tau,
             _radius=self._radius,
             _delta=self._delta,
             direction=new_dir,

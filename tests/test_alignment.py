@@ -37,7 +37,7 @@ def test_builder_with_spiral():
     a = (
         AlignmentBuilder("Test")
         .with_pi_coords([(0, 0), (100, 0), (200, 100)])
-        .with_radii([None, 300, None])
+        .with_radii([None, 150, None])
         .with_spiral_lengths(entry=[0, 30, 0], exit=[0, 30, 0])
         .build()
     )

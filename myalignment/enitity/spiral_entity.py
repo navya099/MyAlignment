@@ -54,7 +54,7 @@ class SpiralEntity(AlignmentEntity):
             geometry=new_geometry,
             start_station=self.start_station,
             start_coord=self.end_coord,
-            start_azimuth=new_geometry.start_azimuth,
+            start_azimuth=(self.end_azimuth + math.pi) % math.tau,
         )
 
     def offset_by(self, distance: float) -> "SpiralEntity":
