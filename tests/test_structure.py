@@ -4,6 +4,7 @@ import pytest
 
 from myalignment.alignment.alignment_builder import AlignmentBuilder
 from myalignment.structure.bridge import Bridge
+from myalignment.structure.factory import StructureFactory
 from myalignment.structure.structurecollection import StructureCollection
 from myalignment.structure.struturetype import StructureType
 from myalignment.structure.tunnel import Tunnel
@@ -24,6 +25,22 @@ def test_tunnel_create():
     assert math.isclose(t.length, 300.0)
     assert t.tunnel_type == "NATM"
     assert math.isclose(t.diameter, 10.0)
+
+
+@pytest.mark.parametrize("structure_class, kind", [
+    (Bridge, StructureType.BRIDGE),
+    (Tunnel, StructureType.TUNNEL),
+])
+def test_factory_creates_structure_with_name_and_station_range(structure_class, kind):
+    item = StructureFactory.create_structure(kind.value, "Structure", 120, 175)
+    assert isinstance(item, structure_class)
+    assert item.structure_type is kind
+    assert (item.name, item.start_station, item.end_station, item.length) == ("Structure", 120, 175, 55)
+
+
+def test_factory_rejects_unsupported_structure_type():
+    with pytest.raises(ValueError, match="지원하지 않는 구조물 타입"):
+        StructureFactory.create_structure("Unknown", "Structure", 120, 175)
 
 
 def test_invalid_station_range():

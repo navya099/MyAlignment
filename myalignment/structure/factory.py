@@ -1,6 +1,6 @@
-from Structure.bridge import Bridge
-from Structure.structure import Structure
-from Structure.tunnel import Tunnel
+from myalignment.structure.bridge import Bridge
+from myalignment.structure.structure import Structure
+from myalignment.structure.tunnel import Tunnel
 
 
 class StructureFactory:
@@ -15,4 +15,4 @@ class StructureFactory:
         """구조물 생성 팩토리메서드"""
         if structuretype not in cls.registry:
             raise ValueError(f"지원하지 않는 구조물 타입입니다: {structuretype}")
-        return cls.registry[structuretype](name, startsta, endsta)
+        return cls.registry[structuretype].create(name, startsta, endsta)
