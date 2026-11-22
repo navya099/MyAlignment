@@ -1,11 +1,13 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import Iterator
+from typing import Iterator, Self
 
 from cadgeom import Point2d
 
 from myalignment.alignment.alignment_query import AlignmentQuery
 from myalignment.alignment.alignment_transaction import AlignmentTransaction
 from myalignment.alignment.label_set import AlignmentLabelSet
+from myalignment.alignment.offset_station_map import OffsetStationMap
 from myalignment.alignment.station_equation import StationEquation
 from myalignment.alignment.station_equation_collection import StationEquationCollection
 from myalignment.alignment.station_equation_type import StationEquationType
@@ -51,7 +53,7 @@ class Alignment:
         default_factory=SuperelevationCollection
     )
 
-    corridors: list[Corridor] = field(default_factory=list)
+    corridors: tuple[Corridor, ...] = field(default_factory=tuple)
     style: AlignmentStyle = field(default_factory=AlignmentStyle.basic, kw_only=True)
 
     label_set: AlignmentLabelSet = field(default_factory=AlignmentLabelSet.standard, kw_only=True)
@@ -59,6 +61,9 @@ class Alignment:
     station_equations: StationEquationCollection = field(
         default_factory=StationEquationCollection, kw_only=True,
     )
+
+    def __post_init__(self):
+        object.__setattr__(self, "corridors", tuple(self.corridors))
 
     def raw_to_display_station(self, raw_station: float) -> float:
         return self.station_equations.raw_to_display(raw_station)
@@ -174,25 +179,56 @@ class Alignment:
         """두 선형의 교차점들 (station-offset)."""
         return AlignmentQuery.intersection(self, other)
 
-    def offset_alignment(self, offset: float) -> "Alignment":
-        """평행 이동한 평면 기하의 측점을 다시 계산한다."""
-        return replace(self, entities=self.entities.offset_by(offset))
-
-    def reversed_alignment(self) -> "Alignment":
-        """평면 기하와 종단·구조물·편구배의 측점을 반전한다."""
-        station_sum = self.start_station + self.end_station
-        structures = (
-            structure.with_station_range(
-                station_sum - structure.end_station, station_sum - structure.start_station,
-            ) for structure in self.structures
+    def offset_alignment(self, offset: float) -> Self:
+        """평행 이동한 기하와 연결 객체에 새 측점을 적용한다."""
+        entities = self.entities.offset_by(offset)
+        if entities is self.entities:
+            return self
+        stations = OffsetStationMap(self.entities, entities)
+        result = replace(
+            self, entities=entities,
+            profiles=tuple(profile._offset_stations(stations) for profile in self.profiles),
+            superelevation=self.superelevation._offset_stations(stations.forward),
+            station_equations=StationEquationCollection(tuple(
+                replace(equation, raw_station_back=stations.forward(equation.raw_station_back))
+                for equation in self.station_equations
+            )),
         )
-        return replace(
+        return self._with_mapped_dependencies(result, stations.forward, reverse=False)
+
+    def reversed_alignment(self) -> Self:
+        """평면 기하 및 연결 객체의 측점과 횡단 방향을 반전한다."""
+        station_sum = self.start_station + self.end_station
+
+        def reflect(station: float) -> float:
+            return station_sum - station
+
+        result = replace(
             self, entities=self.entities.reversed(),
             profiles=tuple(profile._reversed_about(station_sum) for profile in self.profiles),
-            structures=StructureCollection(tuple(sorted(structures, key=lambda item: item.start_station))),
             superelevation=self.superelevation._reversed_about(station_sum),
             station_equations=self.station_equations.reversed(self.start_station, self.end_station),
         )
+        return self._with_mapped_dependencies(result, reflect, reverse=True)
+
+    def _with_mapped_dependencies(
+        self, result: Self, transform: Callable[[float], float], *, reverse: bool,
+    ) -> Self:
+        structures = []
+        for item in self.structures:
+            start, end = transform(item.start_station), transform(item.end_station)
+            structures.append(item.with_station_range(min(start, end), max(start, end)))
+        result = replace(
+            result, structures=StructureCollection(tuple(sorted(structures, key=lambda item: item.start_station))),
+            corridors=tuple(
+                corridor._map_alignment_stations(self.name, transform, reverse=reverse)
+                for corridor in self.corridors
+            ),
+        )
+        return result._map_additional_stations(transform, reverse=reverse)
+
+    def _map_additional_stations(self, transform: Callable[[float], float], *, reverse: bool) -> Self:
+        return self
 
     # ================================================================
     # Profile 조회
@@ -299,7 +335,6 @@ class Alignment:
 
     def add_corridor(self, corridor: Corridor) -> "Alignment":
         """새 코리더 추가한 새 선형."""
-        from dataclasses import replace
         return replace(self, corridors=self.corridors + (corridor,))
 
     # ================================================================

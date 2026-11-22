@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
 import math
+from typing import TYPE_CHECKING
 
 from myalignment.profile.label_set import ProfileLabelSet
 from myalignment.profile.label_style import ProfileLabelStyle
@@ -13,6 +14,11 @@ from myalignment.profile.profileentity import ProfileEntity
 from myalignment.profile.profileentitycollection import ProfileEntityCollection
 from myalignment.profile.profiletangent import ProfileTangent
 from myalignment.profile.profiletype import ProfileType
+from myalignment.profile.station_mapped_entity import StationMappedProfileEntity
+
+if TYPE_CHECKING:
+    from myalignment.alignment.offset_station_map import OffsetStationMap
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +106,11 @@ class Profile:
                 )
             ),
         )
+
+    def _offset_stations(self, stations: "OffsetStationMap") -> "Profile":
+        return self.with_entities(ProfileEntityCollection(tuple(
+            StationMappedProfileEntity.from_entity(entity, stations) for entity in self.entities
+        )))
 
     def with_entities(self, entities: ProfileEntityCollection) -> "Profile":
         return replace(self, entities=entities)

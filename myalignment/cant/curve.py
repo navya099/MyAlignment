@@ -1,4 +1,5 @@
 # cant/curve.py
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from enum import Enum
 
@@ -67,3 +68,27 @@ class CantCurve:
                     right_rail_delta=a.right_rail_delta + t * (b.right_rail_delta - a.right_rail_delta),
                 )
         return self._with_rail_deltas(critical[-1])
+
+
+    def _map_stations(self, transform: Callable[[float], float], *, reverse: bool = False) -> "CantCurve":
+        critical = self.critical_stations
+        if reverse:
+            pivots = {
+                CantPivotMethod.LEFT_RAIL: CantPivotMethod.RIGHT_RAIL,
+                CantPivotMethod.RIGHT_RAIL: CantPivotMethod.LEFT_RAIL,
+            }
+            return replace(
+                self, start_station=transform(self.end_station), end_station=transform(self.start_station),
+                pivot_method=pivots.get(self.pivot_method, self.pivot_method),
+                critical_stations=tuple(
+                    replace(
+                        point, station=transform(point.station), cant_value=-point.cant_value,
+                        left_rail_delta=point.right_rail_delta, right_rail_delta=point.left_rail_delta,
+                    )
+                    for point in reversed(critical)
+                ),
+            )
+        return replace(
+            self, start_station=transform(self.start_station), end_station=transform(self.end_station),
+            critical_stations=tuple(replace(point, station=transform(point.station)) for point in critical),
+        )

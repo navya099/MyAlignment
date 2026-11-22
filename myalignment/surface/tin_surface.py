@@ -265,35 +265,12 @@ class TinSurface:
     def volume_above_elevation(
         self, target_elevation: float
     ) -> tuple[float, float]:
-        cut_total = 0.0
-        fill_total = 0.0
-        use_boundary = len(self.boundaries) > 0
-        pts = self.points
-        bset = self.boundaries
+        """기준 표고 위 절토량과 아래 성토량을 반환한다."""
+        from myalignment.surface.volume import cut_fill_at_elevation
 
-        for tri in self.triangles:
-            if use_boundary:
-                p1 = pts[tri.a]
-                p2 = pts[tri.b]
-                p3 = pts[tri.c]
-                cx = (p1.x + p2.x + p3.x) / 3.0
-                cy = (p1.y + p2.y + p3.y) / 3.0
-                if not bset.contains_point(cx, cy):
-                    continue
-
-            d1 = pts[tri.a].z - target_elevation
-            d2 = pts[tri.b].z - target_elevation
-            d3 = pts[tri.c].z - target_elevation
-            avg_diff = (d1 + d2 + d3) / 3.0
-            area = tri.area_2d(pts)
-            vol = avg_diff * area
-
-            if vol > 0:
-                cut_total += vol
-            else:
-                fill_total += -vol
-
-        return cut_total, fill_total
+        if not math.isfinite(target_elevation):
+            raise ValueError("기준 표고는 유한해야 합니다.")
+        return cut_fill_at_elevation(self, target_elevation)
 
     # ================================================================
     # 경계/집계

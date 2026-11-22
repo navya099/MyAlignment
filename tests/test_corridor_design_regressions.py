@@ -67,3 +67,116 @@ def test_explicit_baseline_must_cover_region():
     builder = CorridorBuilder().add_baseline("BL", "Axis", "", 0, 10)
     with pytest.raises(ValueError, match="BL"):
         builder.add_region("Outside", 0, 12, lane, baseline_name="BL").build()
+
+
+def test_corridor_plan_area_uses_width_length_and_each_region():
+    one_side = AssemblyBuilder().add_right(BasicLane(width=4, slope=0)).build()
+    both_sides = (
+        AssemblyBuilder().add_left(BasicLane(width=2)).add_right(BasicLane(width=3)).build()
+    )
+    corridor = (
+        CorridorBuilder().add_region("One side", 10, 20, one_side)
+        .add_region("Both sides", 30, 38, both_sides).build()
+    )
+    assert corridor.total_surface_area() == pytest.approx(80)
+
+
+def test_add_corridor_is_immutable_and_builder_does_not_share_corridor_list():
+    from myalignment.alignment.alignment import Alignment
+    from myalignment.corridor.corridor import Corridor
+
+    first, second = Corridor("First"), Corridor("Second")
+    source = [first]
+    original = Alignment(corridors=source)
+    source.append(second)
+    assert original.corridors == (first,)
+    assert original.add_corridor(second).corridors == (first, second)
+    assert Alignment().add_corridor(first).corridors == (first,)
+
+    builder = AlignmentBuilder().with_pi_coords([(0, 0), (10, 0)]).with_corridor(first)
+    built = builder.build()
+    assert builder.with_corridor(second).build().corridors == (first, second)
+    assert built.corridors == (first,)
+
+
+def test_reversed_alignment_mirrors_only_its_baseline_sections_in_world():
+    from myalignment.cant.curve import CantCriticalStation, CantCurve, CantPivotMethod
+    from myalignment.corridor.cross_section_3d import CrossSection3D
+
+    assembly = AssemblyBuilder().add_right(BasicLane(width=4)).build()
+    cant = CantCurve(
+        start_station=10, end_station=20, pivot_method=CantPivotMethod.LEFT_RAIL,
+        critical_stations=(CantCriticalStation(10, 0.05), CantCriticalStation(20, 0.1)),
+    )
+    corridor = (
+        CorridorBuilder()
+        .add_baseline("Owned", "Axis", "", 0, 100)
+        .add_baseline("Other", "Parallel", "", 0, 100)
+        .add_region_with_assembly("Own", 10, 20, assembly, baseline_name="Owned", cant_curve=cant)
+        .add_region("Foreign", 10, 20, assembly, baseline_name="Other").build()
+    )
+    original = AlignmentBuilder("Axis").with_pi_coords([(0, 0), (100, 0)]).with_corridor(corridor).build()
+    reversed_axis = original.reversed_alignment()
+    reflected = reversed_axis.primary_corridor
+    own = reflected.region_at(85, baseline_name="Owned")
+    assert (own.start_station, own.end_station) == (80, 90)
+    assert reflected.region_at(15, baseline_name="Other") is corridor.region_by_name("Foreign")
+    assert reflected.region_at(15, baseline_name="Owned") is None
+
+    before = CrossSection3D.from_region(original, 15, corridor.region_by_name("Own"))
+    after = CrossSection3D.from_region(reversed_axis, 85, own)
+    assert after.links == before.links
+    for a, b in zip(after.points, before.points):
+        assert (a.x, a.y, a.z) == pytest.approx((b.x, b.y, b.z))
+
+    restored = reversed_axis.reversed_alignment().primary_corridor
+    assert restored.baselines == corridor.baselines
+    assert restored.region_by_name("Own") == corridor.region_by_name("Own")
+    assert restored.region_by_name("Foreign") == corridor.region_by_name("Foreign")
+
+
+def test_offset_remaps_profile_objects_and_allows_attached_corridor_to_render():
+    from myalignment.structure.bridge import Bridge
+
+    builder = (
+        AlignmentBuilder("Axis").with_pi_coords([(0, 0), (100, 0), (100, 100)])
+        .with_radii([None, 30, None]).with_start_station(1000)
+    )
+    base = builder.build()
+    profile = (
+        ProfileBuilder("Grade").add_tangent(base.start_station, base.end_station, 10, 30).build()
+    )
+    assembly = AssemblyBuilder().add_right(BasicLane(width=4)).build()
+    corridor = (
+        CorridorBuilder().add_baseline("BL", "Axis", profile.name, base.start_station, base.end_station)
+        .add_region("Whole", base.start_station, base.end_station, assembly)
+        .build()
+    )
+    corridor = corridor.with_surface(corridor.build_surface(
+        CorridorSurfaceSpec(), alignments={"Axis": base}, profiles={profile.name: profile},
+    ))
+    arc = base.entities[1]
+    bridge = Bridge.create("Bridge", arc.start_station + 8, arc.start_station + 10)
+    alignment = (
+        builder.with_profile(profile).with_structure(bridge).with_corridor(corridor).build()
+        .add_station_equation(bridge.start_station, 5000)
+    )
+
+    offset = alignment.offset_alignment(-5)
+    shifted_arc = offset.entities[1]
+    expected_start = shifted_arc.start_station + 8 * 25 / 30
+    expected_end = shifted_arc.start_station + 10 * 25 / 30
+    remapped = offset.profiles[0]
+    assert remapped.end_station == offset.end_station < alignment.end_station
+    assert remapped.elevation_at(expected_start) == pytest.approx(profile.elevation_at(bridge.start_station))
+    assert remapped.grade_at(expected_start) == pytest.approx(profile.grade_at(bridge.start_station) * 30 / 25)
+    assert offset.structures[0].start_station == pytest.approx(expected_start)
+    assert offset.structures[0].end_station == pytest.approx(expected_end)
+    assert offset.raw_to_display_station(expected_start) == pytest.approx(5000)
+    assert offset.primary_corridor.baselines[0].end_station == offset.end_station
+    assert offset.primary_corridor.regions[0].end_station == offset.end_station
+    assert len(offset.primary_corridor.surfaces) == 0
+    assert len(alignment.primary_corridor.surfaces) == 1
+    assert Corridor3DRenderer.render_mesh(offset.primary_corridor, offset).primitives
+    restored = offset.reversed_alignment().reversed_alignment()
+    assert restored.profiles[0].elevation_at(expected_start) == pytest.approx(remapped.elevation_at(expected_start))

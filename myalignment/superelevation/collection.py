@@ -1,5 +1,6 @@
 # superelevation/collection.py
 from __future__ import annotations
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 from myalignment.superelevation.critical_station import CrossSegmentType, TransitionRegionType
@@ -33,6 +34,17 @@ class SuperelevationCollection:
         new_list = list(self.curves) + [curve]
         new_list.sort(key=lambda c: c.start_station)
         return SuperelevationCollection(curves=tuple(new_list))
+
+    def _offset_stations(self, transform: Callable[[float], float]) -> "SuperelevationCollection":
+        return SuperelevationCollection(tuple(
+            replace(
+                curve, start_station=transform(curve.start_station), end_station=transform(curve.end_station),
+                critical_stations=tuple(
+                    replace(point, station=transform(point.station)) for point in curve.critical_stations
+                ),
+            )
+            for curve in self.curves
+        ))
 
     def _reversed_about(self, station_sum: float) -> "SuperelevationCollection":
         transitions = {

@@ -97,3 +97,26 @@ def test_polyline_offset_joins_corner_at_intersection_of_shifted_lines():
     assert shifted.entities[0].end_coord == Point2d(12, -2)
     assert shifted.entities[1].start_coord == Point2d(12, -2)
     assert shifted.entities[1].start_station == pytest.approx(12)
+
+
+def test_spiral_offset_carries_profile_elevation_to_parallel_point():
+    from myalignment.profile.profile import ProfileBuilder
+
+    builder = (
+        AlignmentBuilder().with_pi_coords([(0, 0), (100, 0), (100, 100)])
+        .with_radii([None, 30, None]).with_spiral_lengths([0, 10, 0], [0, 16, 0])
+    )
+    original = builder.build()
+    profile = ProfileBuilder().add_tangent(0, original.end_station, 0, 100).build()
+    original = builder.with_profile(profile).build()
+    offset = original.offset_alignment(5)
+
+    for i, entity in enumerate(original.entities):
+        if not isinstance(entity, SpiralEntity):
+            continue
+        station = entity.start_station + 0.37 * entity.length
+        point = entity.point_at(station, 5)
+        shifted_station = offset.entities[i].project(point).station
+        assert offset.profiles[0].elevation_at(shifted_station) == pytest.approx(
+            profile.elevation_at(station), abs=1e-6,
+        )

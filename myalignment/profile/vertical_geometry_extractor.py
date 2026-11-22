@@ -3,9 +3,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-from myalignment.profile.profile_asymmetric_parabola import ProfileAsymmetricParabola
-from myalignment.profile.profile_symmetric_parabola import ProfileSymmetricParabola
-from myalignment.profile.profiletangent import ProfileTangent
+from myalignment.profile.profileentitytype import ProfileEntityType
 from myalignment.profile.vertical_geometry_point import VerticalGeometryPoint
 from myalignment.profile.vertical_geometry_type import VerticalGeometryPointType
 
@@ -30,7 +28,7 @@ class VerticalGeometryExtractor:
         ]
 
         for previous, following in zip(entities, entities[1:]):
-            if isinstance(previous, ProfileTangent) and isinstance(following, ProfileTangent):
+            if previous.entity_type is ProfileEntityType.Tangent and following.entity_type is ProfileEntityType.Tangent:
                 incoming, outgoing = previous.end_grade, following.start_grade
                 if not math.isclose(incoming, outgoing, rel_tol=0.0, abs_tol=1e-9):
                     for point_type in (kind.GRADE_BREAK, kind.PVI):
@@ -39,7 +37,7 @@ class VerticalGeometryExtractor:
                         ))
 
         for entity in entities:
-            if isinstance(entity, (ProfileSymmetricParabola, ProfileAsymmetricParabola)):
+            if entity.entity_type in (ProfileEntityType.ParabolaSymmetric, ProfileEntityType.ParabolaAsymmetric):
                 points.extend(cls._curve_points(entity))
         return sorted(points, key=lambda point: (point.station, point.label_text))
 

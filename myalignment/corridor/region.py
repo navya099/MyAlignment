@@ -25,6 +25,7 @@ class CorridorRegion:
     # Region에 CantCurve 참조 (선택)
     cant_curve: CantCurve | None = None
     baseline_name: str | None = field(default=None, kw_only=True)
+    _mirrored: bool = field(default=False, repr=False, kw_only=True)
 
     def __post_init__(self):
         if not (math.isfinite(self.start_station) and math.isfinite(self.end_station)):
@@ -56,6 +57,14 @@ class CorridorRegion:
 
     def cross_section_at(self, station: float):
         points, links = self.assembly.generate_cross_section(self.target_mapping)
+        if self._mirrored:
+            rail_codes = {PointCode.LEFT_RAIL: PointCode.RIGHT_RAIL, PointCode.RIGHT_RAIL: PointCode.LEFT_RAIL}
+            reflected = {
+                point: replace(point, x=-point.x, code=rail_codes.get(point.code, point.code))
+                for point in (*points, *(p for link in links for p in (link.start, link.end)))
+            }
+            points = tuple(reflected[point] for point in points)
+            links = tuple(replace(link, start=reflected[link.start], end=reflected[link.end]) for link in links)
         if self.cant_curve is None:
             return points, links
         cant = self.cant_curve.cant_at(station)

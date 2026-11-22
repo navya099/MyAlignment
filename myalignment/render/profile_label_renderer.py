@@ -7,9 +7,7 @@ from cadgeom import Point2d
 
 from myalignment.profile.label_component import LabelComponentType
 from myalignment.profile.label_type import ProfileLabelType
-from myalignment.profile.profile_asymmetric_parabola import ProfileAsymmetricParabola
-from myalignment.profile.profile_symmetric_parabola import ProfileSymmetricParabola
-from myalignment.profile.profiletangent import ProfileTangent
+from myalignment.profile.profileentitytype import ProfileEntityType
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.scene import Layer, Scene
 from myalignment.render.viewport import Viewport, ViewportType
@@ -31,15 +29,15 @@ def _anchors(profile: Profile):
             "Grade In": f"{grade_in:.2%}",
             "Grade Out": f"{grade_out:.2%}",
         }
-        if isinstance(entity, ProfileTangent):
+        if entity.entity_type is ProfileEntityType.Tangent:
             yield kind.LINE, station, elevation, {**fields, "Grade": f"{grade_in:.2%}"}
-            if isinstance(previous, ProfileTangent) and not math.isclose(
+            if previous is not None and previous.entity_type is ProfileEntityType.Tangent and not math.isclose(
                 previous.end_grade, grade_in, rel_tol=0.0, abs_tol=1e-9
             ):
                 junction = {"Grade In": f"{previous.end_grade:.2%}", "Grade Out": f"{grade_in:.2%}"}
                 for label_type in (kind.GRADIENT_BREAK, kind.PVI):
                     yield label_type, entity.start_station, entity.start_elevation, junction
-        elif isinstance(entity, (ProfileSymmetricParabola, ProfileAsymmetricParabola)):
+        elif entity.entity_type in (ProfileEntityType.ParabolaSymmetric, ProfileEntityType.ParabolaAsymmetric):
             fields.update({"Curve Length": f"{entity.length:.2f}", "K Value": f"{abs(entity.k_value) / 100:.2f}"})
             yield kind.CURVE, station, elevation, fields
             yield kind.PVI, entity.pvi_station, entity.pvi_elevation, fields

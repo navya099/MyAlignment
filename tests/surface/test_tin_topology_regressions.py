@@ -182,3 +182,11 @@ def test_removing_a_tin_boundary_restores_original_faces_and_respects_remaining_
     assert both.area_2d == pytest.approx(40)
     assert restored_right.triangles == original.with_boundary(right).triangles
     assert restored_right.without_boundary("Right").triangles == original.triangles
+
+
+def test_cut_fill_at_constant_elevation_splits_a_crossing_face():
+    existing = TinSurface.from_points([(0, 0, 2), (10, 0, -2), (0, 10, -2)])
+    assert existing.volume_above_elevation(0) == pytest.approx((25 / 3, 125 / 3))
+
+    with pytest.raises(ValueError, match="유한"):
+        existing.volume_above_elevation(float("nan"))

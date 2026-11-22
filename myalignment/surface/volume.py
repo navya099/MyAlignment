@@ -91,7 +91,16 @@ def cut_fill_between(existing: TinSurface, design: TinSurface) -> tuple[float, f
     return cut, fill
 
 
+def cut_fill_at_elevation(existing: TinSurface, target_elevation: float) -> tuple[float, float]:
+    """기준 표고의 위와 아래에서 체적을 각각 적분한다."""
+    return _cut_fill_on_mesh(existing, lambda _: target_elevation)
+
+
 def _cut_fill_matching_mesh(existing: TinSurface, design: TinSurface) -> tuple[float, float]:
+    return _cut_fill_on_mesh(existing, lambda index: design.points[index].z)
+
+
+def _cut_fill_on_mesh(existing: TinSurface, design_elevation: Callable[[int], float]) -> tuple[float, float]:
     cut = fill = 0.0
     for triangle in existing.triangles:
         a, b, c = triangle.vertices(existing.points)
@@ -101,9 +110,9 @@ def _cut_fill_matching_mesh(existing: TinSurface, design: TinSurface) -> tuple[f
             continue
         polygon = [(a.x, a.y), (b.x, b.y), (c.x, c.y)]
         heights = (
-            a.z - design.points[triangle.a].z,
-            b.z - design.points[triangle.b].z,
-            c.z - design.points[triangle.c].z,
+            a.z - design_elevation(triangle.a),
+            b.z - design_elevation(triangle.b),
+            c.z - design_elevation(triangle.c),
         )
         twice_area = _cross(*polygon)
         if abs(twice_area) < 1e-12:

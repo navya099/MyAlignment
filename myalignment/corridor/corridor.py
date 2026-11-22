@@ -1,7 +1,7 @@
 # corridor/corridor.py
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Iterator, TYPE_CHECKING
 
 from myalignment.corridor.baseline import CorridorBaseline
@@ -98,8 +98,22 @@ class Corridor:
 
     def total_surface_area(self) -> float:
         """총 표면적 (근사) — 영역 길이 × 어셈블리 폭."""
-        # 실제로는 어셈블리 폭 정보 필요
-        return sum(r.length for r in self.regions)
+        area = 0.0
+        for region in self.regions:
+            if region.assembly is None or region.length == 0:
+                continue
+            stations = region.sample_stations()
+            widths = []
+            for station in stations:
+                points, links = region.cross_section_at(station)
+                offsets = [p.x for p in points]
+                offsets.extend(p.x for link in links for p in (link.start, link.end))
+                widths.append(max(offsets) - min(offsets) if offsets else 0.0)
+            area += sum(
+                (end - start) * (left_width + right_width) / 2
+                for start, end, left_width, right_width in zip(stations, stations[1:], widths, widths[1:])
+            )
+        return area
 
     # ---- 불변 변환 ----
     def add_region(self, region: CorridorRegion) -> "Corridor":
@@ -107,6 +121,44 @@ class Corridor:
         new_list = list(self.regions) + [region]
         new_list.sort(key=lambda r: r.start_station)
         return replace(self, regions=tuple(new_list))
+
+    def _map_alignment_stations(
+        self, alignment_name: str, transform: Callable[[float], float], *, reverse: bool,
+    ) -> "Corridor":
+        if self.baselines and all(baseline.alignment_name != alignment_name for baseline in self.baselines):
+            return self
+
+        def map_range(item):
+            start, end = transform(item.start_station), transform(item.end_station)
+            return replace(item, start_station=min(start, end), end_station=max(start, end))
+
+        regions = []
+        affected = False
+        for region in self.regions:
+            baseline = self.baseline_for_region(region)
+            name = region.baseline_name
+            if baseline is not None and len(self.baselines) > 1:
+                # 범위가 바뀌더라도 기존 다중 기준선 연결을 유지한다.
+                name = baseline.name
+            if baseline is None or baseline.alignment_name == alignment_name:
+                affected = True
+                cant = region.cant_curve
+                region = replace(
+                    map_range(region), baseline_name=name, _mirrored=region._mirrored ^ reverse,
+                    cant_curve=cant._map_stations(transform, reverse=reverse) if cant is not None else None,
+                )
+            elif name != region.baseline_name:
+                region = replace(region, baseline_name=name)
+            regions.append(region)
+        return replace(
+            self,
+            baselines=tuple(
+                map_range(baseline) if baseline.alignment_name == alignment_name else baseline
+                for baseline in self.baselines
+            ),
+            regions=tuple(sorted(regions, key=lambda region: region.start_station)),
+            surfaces=self.surfaces if reverse or not affected else CorridorSurfaceSet(),
+        )
 
     def build_surface(
         self,
