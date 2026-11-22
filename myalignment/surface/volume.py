@@ -34,6 +34,10 @@ def _clip(polygon: list[XY], signed_distance: Callable[[XY], float]) -> list[XY]
 def _faces(surface: TinSurface):
     for triangle in surface.triangles:
         vertices = triangle.vertices(surface.points)
+        if len(surface.boundaries) and not surface.boundaries.contains_point(
+            sum(p.x for p in vertices) / 3, sum(p.y for p in vertices) / 3,
+        ):
+            continue
         polygon = [(p.x, p.y) for p in vertices]
         winding = _cross(*polygon)
         if abs(winding) < 1e-12:
@@ -56,6 +60,14 @@ def _integrate(polygon: list[XY], height: Callable[[XY], float]) -> float:
 
 def cut_fill_between(existing: TinSurface, design: TinSurface) -> tuple[float, float]:
     """공통 TIN 면적에서 원지형과 설계면의 표고차를 적분한다."""
+    if (
+        existing.boundaries == design.boundaries
+        and existing.triangles == design.triangles
+        and len(existing.points) == len(design.points)
+        and all((a.x, a.y) == (b.x, b.y) for a, b in zip(existing.points, design.points))
+    ):
+        return _cut_fill_matching_mesh(existing, design)
+
     cut = fill = 0.0
     existing_faces = list(_faces(existing))
     for design_polygon, (dx0, dy0, dx1, dy1), (da, db, dc) in _faces(design):
@@ -76,4 +88,39 @@ def cut_fill_between(existing: TinSurface, design: TinSurface) -> tuple[float, f
 
             cut += _integrate(_clip(overlap, depth), depth)
             fill += _integrate(_clip(overlap, fill_depth), fill_depth)
+    return cut, fill
+
+
+def _cut_fill_matching_mesh(existing: TinSurface, design: TinSurface) -> tuple[float, float]:
+    cut = fill = 0.0
+    for triangle in existing.triangles:
+        a, b, c = triangle.vertices(existing.points)
+        if len(existing.boundaries) and not existing.boundaries.contains_point(
+            (a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3,
+        ):
+            continue
+        polygon = [(a.x, a.y), (b.x, b.y), (c.x, c.y)]
+        heights = (
+            a.z - design.points[triangle.a].z,
+            b.z - design.points[triangle.b].z,
+            c.z - design.points[triangle.c].z,
+        )
+        twice_area = _cross(*polygon)
+        if abs(twice_area) < 1e-12:
+            continue
+        if min(heights) >= 0:
+            cut += abs(twice_area) * sum(heights) / 6
+        elif max(heights) <= 0:
+            fill -= abs(twice_area) * sum(heights) / 6
+        else:
+            def depth(p: XY) -> float:
+                wb = _cross(polygon[0], p, polygon[2]) / twice_area
+                wc = _cross(polygon[0], polygon[1], p) / twice_area
+                return heights[0] + wb * (heights[1] - heights[0]) + wc * (heights[2] - heights[0])
+
+            def fill_depth(p: XY) -> float:
+                return -depth(p)
+
+            cut += _integrate(_clip(polygon, depth), depth)
+            fill += _integrate(_clip(polygon, fill_depth), fill_depth)
     return cut, fill

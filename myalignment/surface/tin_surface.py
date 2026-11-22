@@ -36,6 +36,10 @@ class TinSurface:
         default=None, repr=False, compare=False, kw_only=True,
     )
 
+    _unfiltered_triangles: tuple[Triangle, ...] | None = field(
+        default=None, repr=False, compare=False, kw_only=True,
+    )
+
     def __post_init__(self):
         n = len(self.points)
         for tri in self.triangles:
@@ -92,13 +96,15 @@ class TinSurface:
         *,
         source_points: tuple[TinPoint, ...] | None = None,
     ) -> "TinSurface":
+        mesh = tuple(triangles)
         return cls(
             name=name,
             points=points,
-            triangles=cls._filter_triangles(points, triangles, boundaries),
+            triangles=cls._filter_triangles(points, mesh, boundaries),
             boundaries=boundaries,
             breaklines=breaklines,
             _source_points=source_points,
+            _unfiltered_triangles=mesh if len(boundaries) else None,
         )
 
     @staticmethod
@@ -207,15 +213,18 @@ class TinSurface:
     # 경계/Breakline 추가/제거
     # ================================================================
     def with_boundary(self, boundary: Boundary) -> "TinSurface":
-        new_boundaries = self.boundaries.add(boundary)
-        return replace(
-            self,
-            triangles=self._filter_triangles(self.points, self.triangles, new_boundaries),
-            boundaries=new_boundaries,
-        )
+        return self._with_boundaries(self.boundaries.add(boundary))
 
     def without_boundary(self, name: str) -> "TinSurface":
-        return replace(self, boundaries=self.boundaries.remove(name))
+        return self._with_boundaries(self.boundaries.remove(name))
+
+    def _with_boundaries(self, boundaries: BoundarySet) -> "TinSurface":
+        mesh = self.triangles if self._unfiltered_triangles is None else self._unfiltered_triangles
+        return replace(
+            self, boundaries=boundaries,
+            triangles=self._filter_triangles(self.points, mesh, boundaries),
+            _unfiltered_triangles=mesh if len(boundaries) else None,
+        )
 
     def with_breakline(self, breakline: Breakline) -> "TinSurface":
         """Breakline 추가한 새 Surface (재삼각분할)."""
@@ -248,45 +257,10 @@ class TinSurface:
     # 토공량 (Cut/Fill)
     # ================================================================
     def volume_between(self, other: "TinSurface") -> tuple[float, float]:
-        """
-        두 Surface 사이의 Cut/Fill.
+        """공통 삼각망에서 절·성토량을 산출한다. self는 원지형이다."""
+        from myalignment.surface.volume import cut_fill_between
 
-        전제: 두 Surface가 같은 점 집합(같은 순서)을 가진다.
-        → 정점 인덱스로 직접 매칭 (O(T)).
-        """
-        if len(self.points) != len(other.points):
-            raise ValueError("두 Surface의 점 개수가 다름")
-
-        cut_total = 0.0
-        fill_total = 0.0
-        use_boundary = len(self.boundaries) > 0
-        pts = self.points
-        opts = other.points
-        bset = self.boundaries
-
-        for tri in self.triangles:
-            if use_boundary:
-                p1 = pts[tri.a]
-                p2 = pts[tri.b]
-                p3 = pts[tri.c]
-                cx = (p1.x + p2.x + p3.x) / 3.0
-                cy = (p1.y + p2.y + p3.y) / 3.0
-                if not bset.contains_point(cx, cy):
-                    continue
-
-            d1 = pts[tri.a].z - opts[tri.a].z
-            d2 = pts[tri.b].z - opts[tri.b].z
-            d3 = pts[tri.c].z - opts[tri.c].z
-            avg_diff = (d1 + d2 + d3) / 3.0
-            area = tri.area_2d(pts)
-            vol = avg_diff * area
-
-            if vol > 0:
-                cut_total += vol
-            else:
-                fill_total += -vol
-
-        return cut_total, fill_total
+        return cut_fill_between(self, other)
 
     def volume_above_elevation(
         self, target_elevation: float

@@ -152,3 +152,33 @@ def test_crossing_breaklines_require_a_shared_mesh_vertex():
     surface = TinSurface.from_points(_CORNERS + [(5, 5, 100)], breaklines=lines)
     assert all(frozenset(((x, y), (5, 5))) in _edge_coordinates(surface) for x, y, _ in _CORNERS)
     assert surface.area_2d == pytest.approx(100)
+
+
+def test_public_volume_between_splits_cut_and_fill_and_checks_xy_overlap():
+    existing = TinSurface.from_points([(0, 0, 2), (10, 0, -2), (0, 10, -2)])
+    design = TinSurface.from_points([(0, 0, 0), (10, 0, 0), (0, 10, 0)])
+    reordered = TinSurface.from_points([(0, 10, 0), (10, 0, 0), (0, 0, 0)])
+    far = TinSurface.from_points([(20, 0, 0), (30, 0, 0), (20, 10, 0)])
+    expected = (25 / 3, 125 / 3)
+    assert existing.volume_between(design) == pytest.approx(expected)
+    assert existing.volume_between(reordered) == pytest.approx(expected)
+    assert existing.volume_between(far) == (0, 0)
+
+
+@pytest.mark.parametrize("builder_clips", [False, True])
+def test_removing_a_tin_boundary_restores_original_faces_and_respects_remaining_mask(builder_clips):
+    from myalignment.surface.boundary import Boundary
+    from myalignment.surface.boundary_type import BoundaryType
+
+    left = Boundary.rectangle(0, 0, 3, 10, "Left", BoundaryType.HIDE)
+    right = Boundary.rectangle(7, 0, 10, 10, "Right", BoundaryType.HIDE)
+    builder = TinSurfaceBuilder().add_grid(0, 10, 0, 10, 11, 5, lambda x, y: x + y)
+    original = builder.build()
+    both = (
+        builder.add_hide_boundary(left).add_hide_boundary(right).build()
+        if builder_clips else original.with_boundary(left).with_boundary(right)
+    )
+    restored_right = both.without_boundary("Left")
+    assert both.area_2d == pytest.approx(40)
+    assert restored_right.triangles == original.with_boundary(right).triangles
+    assert restored_right.without_boundary("Right").triangles == original.triangles
