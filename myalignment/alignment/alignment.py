@@ -347,7 +347,7 @@ class Alignment:
     @property
     def quantity_takeoff(self) -> TakeoffResult | None:
         """
-        코리더의 수량 산출.
+        첫 코리더에서 이 선형을 기준선으로 사용하는 영역의 수량 산출.
 
         재료 정보는 metadata에 저장:
             metadata['materials'] = [...]
@@ -355,7 +355,9 @@ class Alignment:
         if not self.corridors:
             return None
         corridor = self.primary_corridor
-        regions = list(corridor.regions)
+        regions = [
+            region for region, _ in corridor._regions_with_baselines(None, self.name, None)
+        ]
         materials = self.metadata.get('materials', [])
 
         qto = QuantityTakeoff(materials=materials)

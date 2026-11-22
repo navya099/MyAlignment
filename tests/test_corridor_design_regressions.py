@@ -180,3 +180,24 @@ def test_offset_remaps_profile_objects_and_allows_attached_corridor_to_render():
     assert Corridor3DRenderer.render_mesh(offset.primary_corridor, offset).primitives
     restored = offset.reversed_alignment().reversed_alignment()
     assert restored.profiles[0].elevation_at(expected_start) == pytest.approx(remapped.elevation_at(expected_start))
+
+
+def test_alignment_takeoff_counts_only_its_baselines_in_shared_corridor():
+    from myalignment.quantity.material import UnitType
+
+    builder = CorridorBuilder()
+    for name, width in (("A", 4), ("B", 6)):
+        lane = AssemblyBuilder().add_right(BasicLane(width=width, slope=0)).build()
+        builder.add_baseline(f"BL {name}", name, "", 0, 10)
+        builder.add_region(name, 0, 10, lane, baseline_name=f"BL {name}")
+    corridor = builder.build()
+    material = Material("Paving", "PAVEMENT", UnitType.AREA)
+    for name, area in (("A", 40), ("B", 60), ("Other", 0)):
+        axis = (
+            AlignmentBuilder(name).with_pi_coords([(0, 0), (10, 0)])
+            .with_corridor(corridor).with_metadata(materials=[material]).build()
+        )
+        assert axis.quantity_takeoff.material_quantities[0].total_quantity == pytest.approx(area)
+
+    corridor_total = QuantityTakeoff([material]).compute(corridor, list(corridor.regions))
+    assert corridor_total.material_quantities[0].total_quantity == pytest.approx(100)
