@@ -70,12 +70,6 @@ class QuantityTakeoff:
         self._materials.append(material)
         return self
 
-    def _material_by_shape_code(self, shape_code: str) -> Material | None:
-        for m in self._materials:
-            if m.shape_code == shape_code:
-                return m
-        return None
-
     def compute(
             self,
             corridor: Corridor,
@@ -84,6 +78,8 @@ class QuantityTakeoff:
     ) -> TakeoffResult:
         """
         코리더 전체 수량 산출.
+
+        AREA는 같은 형상 코드가 덮는 평면 폭을 구간 길이에 대해 적분한다.
 
         Args:
             corridor: 코리더.
@@ -96,48 +92,42 @@ class QuantityTakeoff:
         if target_mappings is None:
             target_mappings = {}
 
-        # 재료별 누적
-        material_volumes = defaultdict(float)  # material_name → volume
-        material_areas = defaultdict(float)  # material_name → max area (or avg)
-        material_lengths = defaultdict(float)  # material_name → length
+        # 형상 코드별로 집계해 같은 코드의 여러 재료·단위를 함께 산출한다.
+        material_volumes = defaultdict(float)
+        material_areas = defaultdict(float)
+        material_lengths = defaultdict(float)
+        area_codes = {m.shape_code for m in self._materials if m.unit_type is UnitType.AREA}
 
-        # Region별 산출
         for region in corridor_regions:
             if region.assembly is None:
                 continue
-
             if region.name in target_mappings:
                 region = region.with_targets(target_mappings[region.name])
-            stations = region.sample_stations()
-            previous = self._shape_areas(region, stations[0])
-            if len(stations) == 1:
-                for code, area in previous.items():
-                    material = self._material_by_shape_code(code.name)
-                    if material:
-                        material_areas[material.name] += area
 
+            stations = region.sample_stations()
+            previous, previous_widths = self._section_quantities(region, stations[0], area_codes)
             for start, end in zip(stations, stations[1:]):
-                current = self._shape_areas(region, end)
+                current, widths = self._section_quantities(region, end, area_codes)
                 length = end - start
                 for code in previous.keys() | current.keys():
-                    material = self._material_by_shape_code(code.name)
-                    if material is None:
-                        continue
                     area = (previous.get(code, 0.0) + current.get(code, 0.0)) / 2
-                    material_volumes[material.name] += area * length
-                    material_lengths[material.name] += length
-                previous = current
+                    material_volumes[code] += area * length
+                    material_lengths[code] += length
+                for code in previous_widths.keys() | widths.keys():
+                    width = (previous_widths.get(code, 0.0) + widths.get(code, 0.0)) / 2
+                    material_areas[code] += width * length
+                previous, previous_widths = current, widths
 
         # 결과 조립
         quantities = []
         for material in self._materials:
             name = material.name
             if material.unit_type == UnitType.VOLUME:
-                qty = material_volumes[name]
+                qty = material_volumes[material.shape_code]
             elif material.unit_type == UnitType.AREA:
-                qty = material_areas[name]
+                qty = material_areas[material.shape_code]
             elif material.unit_type == UnitType.LENGTH:
-                qty = material_lengths[name]
+                qty = material_lengths[material.shape_code]
             else:
                 qty = 0.0
 
@@ -162,12 +152,30 @@ class QuantityTakeoff:
         cut, fill = cut_fill_between(existing_surface, design_surface)
         return TakeoffResult(cut_volume=cut, fill_volume=fill)
 
-    def _shape_areas(self, region: CorridorRegion, station: float) -> dict:
+    def _section_quantities(
+        self, region: CorridorRegion, station: float, area_codes: set[str],
+    ) -> tuple[dict[str, float], dict[str, float]]:
         _, links = region.cross_section_at(station)
         areas = defaultdict(float)
         for shape in self._build_shapes(links):
-            areas[shape.code] += shape.area
-        return areas
+            areas[shape.code.name] += shape.area
+
+        # 포장 상·하단처럼 겹치는 횡단 폭은 평면 면적에 한 번만 포함한다.
+        intervals = defaultdict(list)
+        for link in links:
+            if link.shape_code is not None and link.shape_code.name in area_codes:
+                lo, hi = sorted((link.start.x, link.end.x))
+                if hi > lo:
+                    intervals[link.shape_code.name].append((lo, hi))
+
+        widths = {}
+        for code, spans in intervals.items():
+            width, covered = 0.0, -math.inf
+            for lo, hi in sorted(spans):
+                width += max(0.0, hi - max(lo, covered))
+                covered = max(covered, hi)
+            widths[code] = width
+        return areas, widths
 
     @staticmethod
     def _build_shapes(links) -> tuple[Shape, ...]:

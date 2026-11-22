@@ -56,3 +56,22 @@ def test_takeoff_no_materials():
     result = qto.compute(corridor, [region])
     assert len(result.material_quantities) == 0
     assert result.total_cost == 0.0
+
+
+def test_takeoff_plan_area_and_volume_for_same_material_code():
+    import pytest
+
+    assembly = (
+        AssemblyBuilder().add_left(BasicLane(width=1, side=-1))
+        .add_right(BasicLane(width=3)).build()
+    )
+    region = CorridorRegion(name="Lane", start_station=0, end_station=10, assembly=assembly, frequency=13)
+    corridor = Corridor(regions=(region,))
+    mats = [
+        Material("Paving volume", "PAVEMENT", UnitType.VOLUME),
+        Material("Paving area", "PAVEMENT", UnitType.AREA, unit_price=5),
+    ]
+    volume, area = QuantityTakeoff(mats).compute(corridor, [region]).material_quantities
+    assert volume.total_quantity == pytest.approx(4)
+    assert area.total_quantity == pytest.approx(40)
+    assert area.total_cost == pytest.approx(200)

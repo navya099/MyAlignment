@@ -32,14 +32,14 @@ class BasicLane(Subassembly):
         top_end = AssemblyPoint(
             code=PointCode.LANE_EDGE,
             x=self.width,
-            z=-self.width * self.slope,
+            z=self.width * self.slope,
         )
         # 포장층 (두께 0.1m 가정)
         thickness = 0.1
         bot_end = AssemblyPoint(
             code=PointCode.PAVEMENT_BOTTOM,
             x=self.width,
-            z=-self.width * self.slope - thickness,
+            z=top_end.z - thickness,
         )
         bot_start = AssemblyPoint(
             code=PointCode.PAVEMENT_BOTTOM,

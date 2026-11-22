@@ -54,3 +54,11 @@ def test_place_at():
 
 
 
+
+@pytest.mark.parametrize("side", [-1, 1])
+def test_negative_lane_crossfall_lowers_outer_edges_on_both_sides(side):
+    lane = BasicLane(width=4, slope=-0.02, side=side)
+    points, _ = lane.place_at(origin_x=0, origin_z=1)
+    assert points[1].x == pytest.approx(side * 4)
+    assert points[1].z == pytest.approx(0.92)
+    assert points[2].z == pytest.approx(0.82)
