@@ -17,6 +17,8 @@ from myalignment.surface.delaunay import DelaunayTriangulator
 import logging
 logger = logging.getLogger(__name__)
 
+_Mesh = tuple[tuple[TinPoint, ...], tuple[Triangle, ...]]
+
 @dataclass(frozen=True, slots=True)
 class TinSurface:
     """
@@ -37,7 +39,10 @@ class TinSurface:
         default=None, repr=False, compare=False, kw_only=True,
     )
 
-    _boundary_source: tuple[tuple[TinPoint, ...], tuple[Triangle, ...]] | None = field(
+    _boundary_source: _Mesh | None = field(
+        default=None, repr=False, compare=False, kw_only=True,
+    )
+    _data_clip_source: _Mesh | None = field(
         default=None, repr=False, compare=False, kw_only=True,
     )
 
@@ -49,6 +54,7 @@ class TinSurface:
                     raise ValueError(f"삼각형 인덱스 범위 초과: {v} (n={n})")
 
         if self.boundaries.data_clip_boundaries and self._source_points is None:
+            object.__setattr__(self, "_data_clip_source", (self.points, self.triangles))
             if self.triangles:
                 surface = self.from_points(list(self.points), self.name, self.boundaries, self.breaklines)
                 for field_name in ("points", "triangles", "_source_points", "_boundary_source"):
@@ -192,10 +198,23 @@ class TinSurface:
 
     def _with_boundaries(self, boundaries: BoundarySet) -> "TinSurface":
         if boundaries.data_clip_boundaries != self.boundaries.data_clip_boundaries:
+            if not boundaries.data_clip_boundaries and self._data_clip_source is not None:
+                points, faces = self._data_clip_source
+                return replace(
+                    self, points=points, triangles=faces, boundaries=boundaries,
+                    _boundary_source=None, _data_clip_source=None,
+                )
+            original_mesh = self._data_clip_source
+            if not self.boundaries.data_clip_boundaries:
+                original_mesh = self._boundary_source or (self.points, self.triangles)
             source = self._breakline_base_points()
             if len(source) >= 3:
-                return self.from_points(list(source), self.name, boundaries, self.breaklines)
-            return replace(self, points=source, boundaries=boundaries, _source_points=None, _boundary_source=None)
+                clipped = self.from_points(list(source), self.name, boundaries, self.breaklines)
+                return replace(clipped, _data_clip_source=original_mesh)
+            return replace(
+                self, points=source, boundaries=boundaries, _source_points=None,
+                _boundary_source=None, _data_clip_source=original_mesh,
+            )
         points, faces = self._boundary_source or (self.points, self.triangles)
         return replace(self, boundaries=boundaries, points=points, triangles=faces, _boundary_source=None)
 

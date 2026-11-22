@@ -4,6 +4,7 @@ from myalignment.surface.tin_surface_builder import TinSurfaceBuilder
 from myalignment.surface.boundary import Boundary
 from myalignment.surface.boundary_type import BoundaryType
 import math
+import pytest
 
 def test_tin_with_outer_boundary():
     """격자 10×10 점 → Outer Boundary(사각형)"""
@@ -197,3 +198,39 @@ def test_data_clip_cuts_crossing_breakline_without_importing_exterior_vertices()
     assert clipped.elevation_at(2, 5) == pytest.approx(114)
     assert clipped.elevation_at(8, 5) == pytest.approx(126)
     assert clipped.without_boundary("Input") == original
+
+
+@pytest.mark.parametrize("direct", [False, True])
+def test_removing_last_data_clip_restores_disconnected_original_faces(direct):
+    from myalignment.surface.boundary_set import BoundarySet
+    from myalignment.surface.tin_point import TinPoint
+    from myalignment.surface.triangle import Triangle
+
+    points = tuple(TinPoint(x, y, 10) for x, y in ((0, 0), (2, 0), (0, 2), (10, 0), (12, 0), (10, 2)))
+    faces = (Triangle(0, 1, 2), Triangle(3, 4, 5))
+    original = TinSurface(points=points, triangles=faces)
+    first = Boundary.rectangle(-1, -1, 3, 3, "First", BoundaryType.DATA_CLIP)
+    second = Boundary.rectangle(-2, -2, 4, 4, "Second", BoundaryType.DATA_CLIP)
+    clipped = (
+        TinSurface(points=points, triangles=faces, boundaries=BoundarySet((first,)))
+        if direct else original.with_boundary(first)
+    )
+    clipped = clipped.with_boundary(second).without_boundary("First")
+    assert clipped.area_2d == 2
+    restored = clipped.without_boundary("Second")
+    assert restored == original
+    assert restored.triangle_at(5, 0.5) is None
+    assert restored.volume_above_elevation(5) == (20, 0)
+
+
+def test_data_clip_restoration_reapplies_remaining_display_boundary():
+    from myalignment.surface.tin_point import TinPoint
+    from myalignment.surface.triangle import Triangle
+
+    points = tuple(TinPoint(x, y, 10) for x, y in ((0, 0), (2, 0), (0, 2), (10, 0), (12, 0), (10, 2)))
+    original = TinSurface(points=points, triangles=(Triangle(0, 1, 2), Triangle(3, 4, 5)))
+    clip = Boundary.rectangle(-1, -1, 3, 3, "Clip", BoundaryType.DATA_CLIP)
+    display = Boundary.rectangle(-1, -1, 11, 3, "Outer")
+    restored = original.with_boundary(clip).with_boundary(display).without_boundary("Clip")
+    assert restored == original.with_boundary(display)
+    assert restored.without_boundary("Outer") == original
