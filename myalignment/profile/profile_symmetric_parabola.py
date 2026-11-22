@@ -130,8 +130,8 @@ class ProfileSymmetricParabola(ProfileEntity):
         half = self._curve_length / 2.0
 
         new_pvi_station = L - self._pvi_station
-        new_grade_in = self._grade_out
-        new_grade_out = self._grade_in
+        new_grade_in = -self._grade_out
+        new_grade_out = -self._grade_in
 
         # 반전 후 VPC = 원본 VPT. 그 표고는 원본 end_elevation.
         new_vpc_elev = self.end_elevation

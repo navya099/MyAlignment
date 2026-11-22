@@ -1,6 +1,6 @@
 # geometry/spiral_geometry.py
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 import math
 
 from cadgeom import Point2d
@@ -37,6 +37,7 @@ class SpiralGeometry(Geometry):
     """
     params: SpiralParams = None
     direction: CurveDirection = CurveDirection.NULL
+    _offset: float = field(default=0.0, repr=False, kw_only=True)
 
     def __post_init__(self):
         if self.params is None:
@@ -46,11 +47,12 @@ class SpiralGeometry(Geometry):
 
     @property
     def length(self) -> float:
-        return self.params.length
+        return self._offset_station(self.params.length)
 
     @property
     def radius(self) -> float:
-        return self.params.radius
+        sign = 1 if self.direction == CurveDirection.LEFT else -1
+        return self.params.radius + sign * self._offset
 
     @property
     def spiral_type(self) -> SpiralType:
@@ -63,34 +65,61 @@ class SpiralGeometry(Geometry):
                 and self.direction != CurveDirection.NULL
         )
 
-    def _centerline(self, s: float) -> tuple[float, float]:
+    def _base_turn(self, s: float) -> float:
         sign = 1 if self.direction == CurveDirection.LEFT else -1
-        if not self.is_reversed:
-            x, y = self._spiral_xy(s, self.spiral_type)
-            return x, sign * y
+        length = self.params.length
+        if self.is_reversed:
+            return sign * (self._spiral_tangent(length) - self._spiral_tangent(length - s))
+        return sign * self._spiral_tangent(s)
 
-        # 역방향 곡선은 반대쪽 끝에서 같은 궤적을 거슬러 올라간다.
-        end_x, end_y = self._spiral_xy(self.length, self.spiral_type)
-        x, y = self._spiral_xy(self.length - s, self.spiral_type)
-        angle = sign * self._spiral_tangent(self.length)
-        dx, dy = end_x - x, -sign * (end_y - y)
-        ca, sa = math.cos(angle), math.sin(angle)
-        return dx * ca - dy * sa, dx * sa + dy * ca
+    def _offset_station(self, s: float) -> float:
+        # 기존 완화곡선의 명목 측점에 평행곡선의 길이 차 d·Δθ를 더한다.
+        return s + self._offset * self._base_turn(s) if self._offset else s
+
+    def _base_station(self, s: float) -> float:
+        if not self._offset or s == 0:
+            return s
+        high = self.params.length
+        if s == self.length:
+            return high
+        low = 0.0
+        for _ in range(48):
+            middle = (low + high) / 2
+            if self._offset_station(middle) < s:
+                low = middle
+            else:
+                high = middle
+        return (low + high) / 2
+
+    def _centerline(self, s: float) -> tuple[float, float]:
+        """원래 완화곡선의 측점으로 평행곡선의 좌표를 구한다."""
+        sign = 1 if self.direction == CurveDirection.LEFT else -1
+        length = self.params.length
+        if self.is_reversed:
+            end_x, end_y = self._spiral_xy(length, self.spiral_type)
+            x, y = self._spiral_xy(length - s, self.spiral_type)
+            angle = sign * self._spiral_tangent(length)
+            dx, dy = end_x - x, -sign * (end_y - y)
+            ca, sa = math.cos(angle), math.sin(angle)
+            x, y = dx * ca - dy * sa, dx * sa + dy * ca
+        else:
+            x, y = self._spiral_xy(s, self.spiral_type)
+            y *= sign
+
+        if self._offset:
+            angle = self._base_turn(s)
+            x += self._offset * math.sin(angle)
+            y += self._offset * (1 - math.cos(angle))
+        return x, y
 
     def point_at(self, s: float, offset: float = 0.0) -> Point2d:
-        s = self._check_s(s)
+        s = self._base_station(self._check_s(s))
         x, y = self._centerline(s)
-        angle = self.tangent_at(s) - self.start_azimuth
+        angle = self._base_turn(s)
         return self._to_local_point(x + offset * math.sin(angle), y - offset * math.cos(angle))
 
     def tangent_at(self, s: float) -> float:
-        s = self._check_s(s)
-        sign = 1 if self.direction == CurveDirection.LEFT else -1
-        if self.is_reversed:
-            angle = self._spiral_tangent(self.length) - self._spiral_tangent(self.length - s)
-        else:
-            angle = self._spiral_tangent(s)
-        return self.start_azimuth + sign * angle
+        return self.start_azimuth + self._base_turn(self._base_station(self._check_s(s)))
 
     def project_at(self, p: Point2d) -> ProjectionResult:
         """동일한 중심선에서 최근접 측점을 수치적으로 찾는다."""
@@ -100,7 +129,8 @@ class SpiralGeometry(Geometry):
             x, y = self._centerline(s)
             return math.hypot(lx - x, ly - y)
 
-        samples = [self.length * i / 100 for i in range(101)]
+        length = self.params.length
+        samples = [length * i / 100 for i in range(101)]
         best = min(range(len(samples)), key=lambda i: distance(samples[i]))
         lo, hi = samples[max(0, best - 1)], samples[min(100, best + 1)]
         for _ in range(65):
@@ -112,40 +142,32 @@ class SpiralGeometry(Geometry):
         s = min((samples[best], (lo + hi) / 2), key=distance)
         px, py = self._centerline(s)
         dx, dy = lx - px, ly - py
-        tangent = self.tangent_at(s)
-        angle = tangent - self.start_azimuth
+        angle = self._base_turn(s)
+        tangent = self.start_azimuth + angle
         along = dx * math.cos(angle) + dy * math.sin(angle)
-        on_entity = not ((s == 0 and along < -1e-9) or (s == self.length and along > 1e-9))
+        on_entity = not ((s == 0 and along < -1e-9) or (s == length and along > 1e-9))
         return ProjectionResult(
-            point=self._to_local_point(px, py), station=s,
+            point=self._to_local_point(px, py), station=self._offset_station(s),
             offset=dx * math.sin(angle) - dy * math.cos(angle),
             distance=math.hypot(dx, dy), tangent=tangent, is_on_entity=on_entity,
         )
 
     def reversed(self) -> "SpiralGeometry":
         direction = CurveDirection.RIGHT if self.direction == CurveDirection.LEFT else CurveDirection.LEFT
-        return SpiralGeometry(
-            start_azimuth=(self.tangent_at(self.length) + math.pi) % math.tau,
-            params=self.params, direction=direction, is_reversed=not self.is_reversed,
+        return replace(
+            self, start_azimuth=(self.tangent_at(self.length) + math.pi) % math.tau,
+            direction=direction, is_reversed=not self.is_reversed, _offset=-self._offset,
         )
 
     def offset_by(self, distance: float) -> "SpiralGeometry":
-        """평행 이동한 완화곡선 (반지름 변화)."""
-        sign = +1.0 if self.direction == CurveDirection.LEFT else -1.0
-        new_radius = self.params.radius - sign * distance
-        if new_radius <= 0:
-            raise ValueError(f"offset 후 반지름 ≤ 0: {new_radius}")
-        new_params = SpiralParams(
-            radius=new_radius,
-            length=self.params.length,
-            spiral_type=self.params.spiral_type,
-        )
-        return SpiralGeometry(
-            start_azimuth=self.start_azimuth,
-            params=new_params,
-            direction=self.direction,
-            is_reversed=self.is_reversed,
-        )
+        """원래 완화곡선의 법선에서 일정 횡거를 갖는 곡선."""
+        result = replace(self, _offset=self._offset + distance)
+        if not math.isfinite(result._offset) or result.radius <= 0:
+            raise ValueError("offset 후 유효하지 않은 완화곡선 반지름")
+        stations = [result._offset_station(self.params.length * i / 128) for i in range(129)]
+        if any(b <= a for a, b in zip(stations, stations[1:])):
+            raise ValueError("offset이 완화곡선의 측점 방향을 뒤집습니다.")
+        return result
 
     # ---- SpiralType별 로컬 좌표 ----
     def _spiral_xy(self, s: float, stype: SpiralType) -> tuple[float, float]:
@@ -196,7 +218,7 @@ class SpiralGeometry(Geometry):
     def _spiral_tangent(self, s: float) -> float:
         """로컬 접선각 (rad, 부호 없음)."""
         kind = self.spiral_type
-        radius, length = self.radius, self.length
+        radius, length = self.params.radius, self.params.length
         if kind in (SpiralType.Clothoid, SpiralType.OffsetClothoid):
             angle = s * s / (2 * radius * length)
             dx = 1 - angle ** 2 / 2 + angle ** 4 / 24

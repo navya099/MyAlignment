@@ -158,8 +158,8 @@ class ProfileAsymmetricParabola(ProfileEntity):
         new_pvi_station = L - self._pvi_station
         new_length_in = self._length_out
         new_length_out = self._length_in
-        new_grade_in = self._grade_out
-        new_grade_out = self._grade_in
+        new_grade_in = -self._grade_out
+        new_grade_out = -self._grade_in
 
         # VPC' = 원본 VPT, VPT' = 원본 VPC
         new_start_elev = self.end_elevation

@@ -60,3 +60,40 @@ def test_adjacent_pi_curves_reject_overlapping_tangent_requirements():
     )
     with pytest.raises(InvalidGeometryError, match="중첩"):
         builder.build()
+
+
+@pytest.mark.parametrize("turn", [1, -1])
+@pytest.mark.parametrize("spirals", [(0, 0), (10, 16)])
+@pytest.mark.parametrize("offset", [-5, 5])
+def test_curved_alignment_offset_matches_original_normal(turn, spirals, offset):
+    entry, exit_ = spirals
+    axis = (
+        AlignmentBuilder().with_pi_coords([(0, 0), (100, 0), (100, turn * 100)])
+        .with_start_station(1000).with_radii([None, 30, None])
+        .with_spiral_lengths([0, entry, 0], [0, exit_, 0]).build()
+    )
+    shifted = axis.offset_alignment(offset)
+    assert shifted.start_station == axis.start_station
+    assert shifted.length == pytest.approx(axis.length + offset * turn * math.pi / 2)
+    for original, parallel in zip(axis.entities, shifted.entities):
+        if isinstance(original, ArcEntity):
+            assert parallel.geometry.radius == pytest.approx(30 + turn * offset)
+        for fraction in (0, 0.13, 0.5, 0.87, 1):
+            source = original.start_station + fraction * original.length
+            point = original.point_at(source, offset)
+            assert parallel.project(point).distance < 1e-8
+
+    reversed_shifted = axis.reversed_alignment().offset_alignment(-offset)
+    for i in range(21):
+        distance = i * shifted.length / 20
+        a = shifted.point_at(shifted.start_station + distance)
+        b = reversed_shifted.point_at(reversed_shifted.end_station - distance)
+        assert a.distance_to(b) < 1e-8
+
+
+def test_polyline_offset_joins_corner_at_intersection_of_shifted_lines():
+    axis = AlignmentBuilder().with_pi_coords([(0, 0), (10, 0), (10, 10)]).build()
+    shifted = axis.offset_alignment(2)
+    assert shifted.entities[0].end_coord == Point2d(12, -2)
+    assert shifted.entities[1].start_coord == Point2d(12, -2)
+    assert shifted.entities[1].start_station == pytest.approx(12)

@@ -59,20 +59,10 @@ class SpiralEntity(AlignmentEntity):
 
     def offset_by(self, distance: float) -> "SpiralEntity":
         """평행 이동한 완화곡선 Entity."""
-        new_geometry = self.geometry.offset_by(distance)
-        sign = +1.0 if self.geometry.direction == CurveDirection.LEFT else -1.0
-        nx = -math.sin(self.start_azimuth) * sign
-        ny = math.cos(self.start_azimuth) * sign
-        new_start = Point2d(
-            self.start_coord.x - distance * nx,
-            self.start_coord.y - distance * ny,
-        )
-        return SpiralEntity(
-            entity_id=self.entity_id,
-            geometry=new_geometry,
-            start_station=self.start_station,
-            start_coord=new_start,
-            start_azimuth=self.start_azimuth,
+        return replace(
+            self,
+            geometry=self.geometry.offset_by(distance),
+            start_coord=self.point_at(self.start_station, distance),
         )
 
     def _replace(self, **kwargs) -> "SpiralEntity":

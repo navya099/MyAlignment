@@ -1,6 +1,6 @@
 # geometry/arc_geometry.py
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 
 from cadgeom import Point2d
@@ -116,20 +116,10 @@ class ArcGeometry(Geometry):
     def offset_by(self, distance: float) -> "ArcGeometry":
         """평행 이동한 원호 (반지름 변화)."""
         sign = +1.0 if self.direction == CurveDirection.LEFT else -1.0
-        new_radius = self._radius - sign * distance
-        if new_radius <= 0:
-            raise ValueError(f"offset 후 반지름이 ≤ 0: {new_radius}")
-        # 길이 유지를 위해 delta 조정
-        new_delta = self.length / new_radius
-        if new_delta > math.pi:
-            raise ValueError(f"offset 후 delta > π: {new_delta}")
-        return ArcGeometry(
-            start_azimuth=self.start_azimuth,
-            _radius=new_radius,
-            _delta=new_delta,
-            direction=self.direction,
-            is_reversed=self.is_reversed,
-        )
+        new_radius = self._radius + sign * distance
+        if not math.isfinite(new_radius) or new_radius <= 0:
+            raise ValueError(f"offset 후 유효하지 않은 반지름: {new_radius}")
+        return replace(self, _radius=new_radius)
 
     # ---- 로컬 헬퍼 ----
     def _local_end(self) -> tuple[float, float]:

@@ -175,13 +175,22 @@ class Alignment:
         return AlignmentQuery.intersection(self, other)
 
     def offset_alignment(self, offset: float) -> "Alignment":
-        """평행 이동한 새 선형."""
+        """평행 이동한 평면 기하의 측점을 다시 계산한다."""
         return replace(self, entities=self.entities.offset_by(offset))
 
     def reversed_alignment(self) -> "Alignment":
-        """뒤집힌 새 선형 (측점도 재배치)."""
+        """평면 기하와 종단·구조물·편구배의 측점을 반전한다."""
+        station_sum = self.start_station + self.end_station
+        structures = (
+            structure.with_station_range(
+                station_sum - structure.end_station, station_sum - structure.start_station,
+            ) for structure in self.structures
+        )
         return replace(
             self, entities=self.entities.reversed(),
+            profiles=tuple(profile._reversed_about(station_sum) for profile in self.profiles),
+            structures=StructureCollection(tuple(sorted(structures, key=lambda item: item.start_station))),
+            superelevation=self.superelevation._reversed_about(station_sum),
             station_equations=self.station_equations.reversed(self.start_station, self.end_station),
         )
 

@@ -7,6 +7,7 @@ from cadgeom import Point2d
 
 from myalignment.core.projection_result import ProjectionResult
 from myalignment.enitity.alignment_entity import AlignmentEntity
+from myalignment.enitity.line_entity import LineEntity
 from myalignment.ipdata.ipdata import PIInput
 
 
@@ -134,7 +135,41 @@ class AlignmentEntityCollection:
         return AlignmentEntityCollection(tuple(reversed_entities), _pi_input=pi_input)
 
     def offset_by(self, distance: float) -> "AlignmentEntityCollection":
-        """전체 시퀀스를 평행 이동한 새 컬렉션."""
-        return AlignmentEntityCollection(
-            entities=tuple(e.offset_by(distance) for e in self.entities)
-        )
+        """횡거만큼 이동하고 새 길이로 측점을 재계산한다."""
+        if not math.isfinite(distance):
+            raise ValueError("offset은 유한해야 합니다.")
+        if distance == 0 or not self.entities:
+            return self
+
+        shifted = [entity.offset_by(distance) for entity in self.entities]
+        joints = [shifted[0].start_coord]
+        for previous, following in zip(shifted, shifted[1:]):
+            end, start = previous.end_coord, following.start_coord
+            if end.distance_to(start) <= 1e-6:
+                joints.append(start)
+                continue
+            if not isinstance(previous, LineEntity) or not isinstance(following, LineEntity):
+                raise ValueError("접선이 불연속인 곡선 접점에는 offset을 적용할 수 없습니다.")
+            a, b = previous.start_azimuth, following.start_azimuth
+            denominator = math.sin(b - a)
+            if abs(denominator) < 1e-10:
+                raise ValueError("평행한 직선 접점에서 offset 교점을 계산할 수 없습니다.")
+            along = ((start.x - end.x) * math.sin(b) - (start.y - end.y) * math.cos(b)) / denominator
+            joints.append(Point2d(end.x + along * math.cos(a), end.y + along * math.sin(a)))
+        joints.append(shifted[-1].end_coord)
+
+        result = []
+        station = self.start_station
+        for entity, start, end in zip(shifted, joints, joints[1:]):
+            if isinstance(entity, LineEntity):
+                along = ((end.x - start.x) * math.cos(entity.start_azimuth)
+                         + (end.y - start.y) * math.sin(entity.start_azimuth))
+                if along <= 1e-6:
+                    raise ValueError("offset 후 직선 구간이 사라지거나 방향이 뒤집힙니다.")
+                line = LineEntity.create(start, end, station)
+                entity = line._replace(entity_id=entity.entity_id)
+            else:
+                entity = entity.with_start(start, station)
+            result.append(entity)
+            station = entity.end_station
+        return AlignmentEntityCollection(tuple(result))

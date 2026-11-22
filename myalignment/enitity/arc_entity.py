@@ -99,22 +99,10 @@ class ArcEntity(AlignmentEntity):
 
     def offset_by(self, distance: float) -> "ArcEntity":
         """평행 이동한 원곡선 Entity."""
-        new_geometry = self.geometry.offset_by(distance)
-        # 시작점: 수직 방향으로 distance만큼 이동
-        sign = +1.0 if self.geometry.direction == CurveDirection.LEFT else -1.0
-        nx = -math.sin(self.start_azimuth) * sign
-        ny = math.cos(self.start_azimuth) * sign
-        # 좌(-) → +n·(-1) ... (offset_by 규약)
-        new_start = Point2d(
-            self.start_coord.x - distance * nx,
-            self.start_coord.y - distance * ny,
-        )
-        return ArcEntity(
-            entity_id=self.entity_id,
-            geometry=new_geometry,
-            start_station=self.start_station,
-            start_coord=new_start,
-            start_azimuth=self.start_azimuth,
+        return replace(
+            self,
+            geometry=self.geometry.offset_by(distance),
+            start_coord=self.point_at(self.start_station, distance),
         )
 
     def _replace(self, **kwargs) -> "ArcEntity":

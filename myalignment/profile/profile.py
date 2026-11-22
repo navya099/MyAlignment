@@ -89,12 +89,14 @@ class Profile:
     # ---- 불변 변환 ----
     def reversed(self) -> "Profile":
         """전체 길이 기준으로 뒤집힌 새 프로파일."""
-        L = self.length
+        return self._reversed_about(self.start_station + self.end_station)
+
+    def _reversed_about(self, station_sum: float) -> "Profile":
         return replace(
             self,
             entities=ProfileEntityCollection(
                 entities=tuple(
-                    e.reversed(L) for e in reversed(self.entities.entities)
+                    e.reversed(station_sum) for e in reversed(self.entities.entities)
                 )
             ),
         )
