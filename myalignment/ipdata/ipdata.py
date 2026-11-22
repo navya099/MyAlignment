@@ -90,6 +90,14 @@ class PIInput:
             for c in coords
         )
         n = len(pts)
+        for label, values in (
+            ("반경", radii),
+            ("진입 완화곡선장", entry_lengths),
+            ("진출 완화곡선장", exit_lengths),
+        ):
+            if values is not None and len(values) != n:
+                raise ValueError(f"좌표/{label} 길이 불일치 (PI {n}개, 입력 {len(values)}개)")
+
         if entry_lengths is None:
             entry_lengths = [0.0] * n
         if exit_lengths is None:

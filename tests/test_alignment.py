@@ -45,6 +45,33 @@ def test_builder_with_spiral():
     assert types.count("SpiralEntity") == 2
 
 
+def test_builder_recomputes_defaults_after_pi_count_changes():
+    builder = AlignmentBuilder().with_pi_coords([(0, 0), (100, 0)])
+    first = builder.build()
+
+    builder.with_pi_coords([(0, 0), (100, 0), (200, 0)])
+    second = builder.build()
+
+    assert first.length == pytest.approx(100)
+    assert second.length == pytest.approx(200)
+    assert len(second.entities) == 2
+
+
+@pytest.mark.parametrize("lengths", [[0, 10], [0, 10, 0, 20]])
+@pytest.mark.parametrize("side, label", [("entry", "진입"), ("exit", "진출")])
+def test_builder_rejects_mismatched_spiral_lengths(lengths, side, label):
+    builder = (
+        AlignmentBuilder()
+        .with_pi_coords([(0, 0), (100, 0), (200, 100)])
+        .with_radii([None, 150, None])
+    )
+    inputs = {"entry": [0, 10, 0], "exit": [0, 10, 0]}
+    inputs[side] = lengths
+
+    with pytest.raises(ValueError, match=f"{label} 완화곡선장 길이 불일치"):
+        builder.with_spiral_lengths(**inputs).build()
+
+
 def test_point_at():
     a = (
         AlignmentBuilder()

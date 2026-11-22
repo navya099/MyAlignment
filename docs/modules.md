@@ -1,6 +1,6 @@
 # 모듈 찾아보기
 
-주요 진입점 열의 경로 앞에 `myalignment.`를 붙입니다. 예를 들어 `alignment.alignment_builder.AlignmentBuilder`는 `from myalignment.alignment_builder import AlignmentBuilder`로 가져옵니다. 하위 패키지의 주요 진입점과 해당 작업의 실행 예제를 연결했습니다.
+주요 진입점 열의 경로 앞에 `myalignment.`를 붙입니다. 예를 들어 `alignment.alignment_builder.AlignmentBuilder`는 `from myalignment.alignment.alignment_builder import AlignmentBuilder`로 가져옵니다. 하위 패키지의 주요 진입점과 해당 작업의 실행 예제를 연결했습니다.
 
 | 패키지 | 주요 진입점 | 예제와 설명 |
 | --- | --- | --- |
@@ -29,7 +29,7 @@
 ## 도로 편구배
 
 ```python
-from myalignment.alignment_builder import AlignmentBuilder
+from myalignment.alignment.alignment_builder import AlignmentBuilder
 from myalignment.superelevation.critical_station import (
     CrossSegmentType, SuperelevationCriticalStation, TransitionRegionType,
 )

@@ -21,11 +21,14 @@ class AlignmentBuilder:
     """
     Alignment 선언적 생성 빌더.
 
+    설정 메서드는 현재 빌더를 수정하고 같은 인스턴스를 반환한다.
+    설정이 독립적인 선형을 만들려면 선형마다 새 빌더를 사용한다.
+
     사용 예:
         alignment = (
             AlignmentBuilder("노선1")
             .with_pi_coords([(0,0), (100,0), (200,100)])
-            .with_radii([None, 300, None])
+            .with_radii([None, 150, None])
             .with_spiral_lengths(entry=[0, 30, 0], exit=[0, 30, 0])
             .with_design_speed(80)
             .build()
@@ -132,23 +135,14 @@ class AlignmentBuilder:
         """
         if not self._coords:
             raise ValueError("PI 좌표가 없습니다.")
-        if not self._radii:
-            self._radii = [None] * len(self._coords)
-        if len(self._radii) != len(self._coords):
-            raise ValueError("좌표/반경 길이 불일치")
-
-        if not self._entry_lengths:
-            self._entry_lengths = [0.0] * len(self._coords)
-        if not self._exit_lengths:
-            self._exit_lengths = [0.0] * len(self._coords)
 
         pi_input = PIInput.from_coords_and_radii(
             coords=self._coords,
-            radii=self._radii,
+            radii=self._radii or [None] * len(self._coords),
             start_station=self._start_station,
             spiral_type=self._spiral_type or SpiralType.Clothoid,
-            entry_lengths=self._entry_lengths,
-            exit_lengths=self._exit_lengths,
+            entry_lengths=self._entry_lengths or None,
+            exit_lengths=self._exit_lengths or None,
         )
         entities = EntityFactory.build(pi_input)
 
