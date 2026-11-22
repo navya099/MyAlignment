@@ -1,0 +1,21 @@
+site_name: MyAlignment 사용 설명서
+site_description: 평면선형, 종단, 철도, 코리더와 TIN을 구성하고 도면으로 내보내는 방법
+repo_url: https://github.com/navya099/MyAlignment
+use_directory_urls: false
+theme:
+  name: mkdocs
+  locale: ko
+markdown_extensions:
+  - toc:
+      slugify: !!python/name:markdown.extensions.toc.slugify_unicode
+nav:
+  - 홈: index.md
+  - 시작하기: getting-started.md
+  - 평면선형: alignment.md
+  - 종단과 종단 뷰: profile.md
+  - 철도와 분기기: rail.md
+  - 어셈블리와 코리더: corridor.md
+  - 지표면과 정지: surface.md
+  - 수량 산출: quantities.md
+  - 도면과 3D 출력: rendering.md
+  - 모듈 찾아보기: modules.md
