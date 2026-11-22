@@ -31,6 +31,11 @@ class TinSurface:
     boundaries: BoundarySet = field(default_factory=BoundarySet)
     breaklines: BreaklineSet = field(default_factory=BreaklineSet)
 
+    # 제약선을 편집할 때 삽입점과 덮어쓴 표고를 원본에 누적하지 않는다.
+    _source_points: tuple[TinPoint, ...] | None = field(
+        default=None, repr=False, compare=False, kw_only=True,
+    )
+
     def __post_init__(self):
         n = len(self.points)
         for tri in self.triangles:
@@ -66,37 +71,51 @@ class TinSurface:
         bset = boundaries or BoundarySet()
         blset = breaklines or BreaklineSet()
 
-        # 삼각분할
-        if len(blset) > 0:
-            triangles_list, all_points = (
-                ConstrainedDelaunayTriangulator.triangulate(
-                    list(tin_points), list(blset.breaklines)
-                )
+        if any(line.breakline_type != BreaklineType.NON_DESTRUCTIVE for line in blset):
+            triangles, all_points = ConstrainedDelaunayTriangulator.triangulate(
+                list(tin_points), list(blset)
             )
-            tin_points = tuple(all_points)
-        else:
-            triangles_list = _triangulate(tin_points)
+            return cls._from_mesh(
+                tuple(all_points), triangles, name, bset, blset, source_points=tin_points,
+            )
 
-        # Boundary 필터
-        if len(bset) > 0:
-            filtered: list[Triangle] = []
-            for tri in triangles_list:
-                p1 = tin_points[tri.a]
-                p2 = tin_points[tri.b]
-                p3 = tin_points[tri.c]
-                cx = (p1.x + p2.x + p3.x) / 3.0
-                cy = (p1.y + p2.y + p3.y) / 3.0
-                if bset.contains_point(cx, cy):
-                    filtered.append(tri)
-            triangles_list = filtered
+        return cls._from_mesh(tin_points, _triangulate(tin_points), name, bset, blset)
 
+    @classmethod
+    def _from_mesh(
+        cls,
+        points: tuple[TinPoint, ...],
+        triangles: list[Triangle],
+        name: str,
+        boundaries: BoundarySet,
+        breaklines: BreaklineSet,
+        *,
+        source_points: tuple[TinPoint, ...] | None = None,
+    ) -> "TinSurface":
         return cls(
             name=name,
-            points=tin_points,
-            triangles=tuple(triangles_list),
-            boundaries=bset,
-            breaklines=blset,
+            points=points,
+            triangles=cls._filter_triangles(points, triangles, boundaries),
+            boundaries=boundaries,
+            breaklines=breaklines,
+            _source_points=source_points,
         )
+
+    @staticmethod
+    def _filter_triangles(
+        points: tuple[TinPoint, ...],
+        triangles: list[Triangle] | tuple[Triangle, ...],
+        boundaries: BoundarySet,
+    ) -> tuple[Triangle, ...]:
+        if not len(boundaries):
+            return tuple(triangles)
+
+        filtered = []
+        for triangle in triangles:
+            a, b, c = triangle.vertices(points)
+            if boundaries.contains_point((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3):
+                filtered.append(triangle)
+        return tuple(filtered)
 
     # ================================================================
     # 표고/경사 조회
@@ -189,19 +208,9 @@ class TinSurface:
     # ================================================================
     def with_boundary(self, boundary: Boundary) -> "TinSurface":
         new_boundaries = self.boundaries.add(boundary)
-        filtered: list[Triangle] = []
-        pts = self.points
-        for tri in self.triangles:
-            p1 = pts[tri.a]
-            p2 = pts[tri.b]
-            p3 = pts[tri.c]
-            cx = (p1.x + p2.x + p3.x) / 3.0
-            cy = (p1.y + p2.y + p3.y) / 3.0
-            if new_boundaries.contains_point(cx, cy):
-                filtered.append(tri)
         return replace(
             self,
-            triangles=tuple(filtered),
+            triangles=self._filter_triangles(self.points, self.triangles, new_boundaries),
             boundaries=new_boundaries,
         )
 
@@ -211,8 +220,10 @@ class TinSurface:
     def with_breakline(self, breakline: Breakline) -> "TinSurface":
         """Breakline 추가한 새 Surface (재삼각분할)."""
         new_blset = self.breaklines.add(breakline)
+        if breakline.breakline_type == BreaklineType.NON_DESTRUCTIVE:
+            return replace(self, breaklines=new_blset)
         return TinSurface.from_points(
-            list(self.points),
+            list(self._source_points or self.points),
             name=self.name,
             boundaries=self.boundaries,
             breaklines=new_blset,
@@ -221,8 +232,13 @@ class TinSurface:
     def without_breakline(self, name: str) -> "TinSurface":
         """Breakline 제거한 새 Surface (재삼각분할)."""
         new_blset = self.breaklines.remove(name)
+        if all(
+            line.name != name or line.breakline_type == BreaklineType.NON_DESTRUCTIVE
+            for line in self.breaklines
+        ):
+            return replace(self, breaklines=new_blset)
         return TinSurface.from_points(
-            list(self.points),
+            list(self._source_points or self.points),
             name=self.name,
             boundaries=self.boundaries,
             breaklines=new_blset,

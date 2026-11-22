@@ -1,6 +1,8 @@
 # surface/delaunay.py
 from __future__ import annotations
 
+import math
+
 from myalignment.surface.tin_point import TinPoint
 from myalignment.surface.triangle import Triangle
 
@@ -23,21 +25,56 @@ class DelaunayTriangulator:
         min_y = min(p.y for p in points)
         max_y = max(p.y for p in points)
 
-        dx = max_x - min_x
-        dy = max_y - min_y
-        dmax = max(dx, dy) if max(dx, dy) > 0 else 1.0
-        mid_x = (min_x + max_x) / 2
-        mid_y = (min_y + max_y) / 2
-
-        st = [
-            TinPoint(mid_x - 20 * dmax, mid_y - dmax, 0),
-            TinPoint(mid_x, mid_y + 20 * dmax, 0),
-            TinPoint(mid_x + 20 * dmax, mid_y - dmax, 0),
+        extent = max(max_x - min_x, max_y - min_y)
+        if extent == 0:
+            return []
+        mid_x = min_x + (max_x - min_x) / 2
+        mid_y = min_y + (max_y - min_y) / 2
+        local_points = [
+            TinPoint((p.x - mid_x) / extent, (p.y - mid_y) / extent, p.z)
+            for p in points
         ]
-        all_points = list(points) + st
-        st_offset = len(points)
 
-        triangles: list[Triangle] = [Triangle(st_offset, st_offset + 1, st_offset + 2)]
+        hull_area = DelaunayTriangulator._convex_hull_area(local_points)
+        if hull_area == 0:
+            return []
+
+        # 유한한 외곽 삼각형이 실제 볼록 껍질의 변을 누락시킬 수 있다.
+        for span in (20, 200, 2_000, 20_000, 200_000, 2_000_000):
+            outer = [
+                TinPoint(-span, -span, 0),
+                TinPoint(0, span, 0),
+                TinPoint(span, -span, 0),
+            ]
+            result = DelaunayTriangulator._triangulate_with_outer(local_points, outer)
+            area = math.fsum(triangle.area_2d(local_points) for triangle in result)
+            if math.isclose(area, hull_area, rel_tol=1e-12):
+                return result
+        raise ValueError("Delaunay 삼각망이 점 집합의 볼록 껍질을 덮지 못했습니다.")
+
+    @staticmethod
+    def _convex_hull_area(points: list[TinPoint]) -> float:
+        coords = sorted({(p.x, p.y) for p in points})
+
+        def cross(a, b, c):
+            return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+        def chain(ordered):
+            side = []
+            for point in ordered:
+                while len(side) >= 2 and cross(side[-2], side[-1], point) <= 0:
+                    side.pop()
+                side.append(point)
+            return side
+
+        hull = chain(coords)[:-1] + chain(reversed(coords))[:-1]
+        return math.fsum(cross(hull[0], a, b) for a, b in zip(hull[1:], hull[2:])) / 2
+
+    @staticmethod
+    def _triangulate_with_outer(points: list[TinPoint], outer: list[TinPoint]) -> list[Triangle]:
+        all_points = points + outer
+        st_offset = len(points)
+        triangles = [Triangle(st_offset, st_offset + 1, st_offset + 2)]
 
         for i in range(len(points)):
             triangles = DelaunayTriangulator._insert_point(all_points, triangles, i)
@@ -103,14 +140,16 @@ class DelaunayTriangulator:
         cx = p3.x - px
         cy = p3.y - py
 
-        d = (
-            ax * (by * (cx * cx + cy * cy) - (bx * bx + by * by) * cy)
-            - ay * (bx * (cx * cx + cy * cy) - (bx * bx + by * by) * cx)
-            + (ax * ax + ay * ay) * (bx * cy - by * cx)
+        aa, bb, cc = ax * ax + ay * ay, bx * bx + by * by, cx * cx + cy * cy
+        d = aa * (bx * cy - by * cx) + bb * (cx * ay - cy * ax) + cc * (ax * by - ay * bx)
+        error_scale = (
+            aa * (abs(bx * cy) + abs(by * cx))
+            + bb * (abs(cx * ay) + abs(cy * ax))
+            + cc * (abs(ax * by) + abs(ay * bx))
         )
 
         # 반시계 보정
         area2 = (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)
         if area2 < 0:
             d = -d
-        return d > 1e-9
+        return d > 16 * math.ulp(1.0) * error_scale
