@@ -73,6 +73,14 @@ class CorridorSurfaceBuilder:
         boundaries: list[Boundary] = []
         triangles: list[Triangle] = []
         indices: dict[tuple[float, float], int] = {}
+
+        def register(vertex: TinPoint) -> int:
+            key = (vertex.x, vertex.y)
+            previous = points.setdefault(key, vertex)
+            if not math.isclose(previous.z, vertex.z, rel_tol=0, abs_tol=1e-8):
+                raise ValueError(f"Conflicting elevations at XY {key}")
+            return indices.setdefault(key, len(indices))
+
         for region in corridor.regions:
             if region.assembly is None:
                 continue
@@ -107,11 +115,11 @@ class CorridorSurfaceBuilder:
                     world = alignment.point_at(station, point.x)
                     key = (world.x, world.y)
                     vertex = TinPoint(*key, elevation + point.z)
-                    previous = points.setdefault(key, vertex)
+                    if not use_region_mesh:
+                        register(vertex)
+                    previous = region_points.setdefault(key, vertex)
                     if not math.isclose(previous.z, vertex.z, rel_tol=0, abs_tol=1e-8):
                         raise ValueError(f"Conflicting elevations at XY {key}")
-                    indices.setdefault(key, len(indices))
-                    region_points[key] = previous
                     xy.append(key)
                 left_edge.append(xy[0])
                 right_edge.append(xy[-1])
@@ -125,7 +133,7 @@ class CorridorSurfaceBuilder:
                     )
                     if region_surface.triangles:
                         boundaries.append(boundary)
-                        region_indices = [indices[key] for key in region_points]
+                        region_indices = [register(vertex) for vertex in region_surface.points]
                         for triangle in region_surface.triangles:
                             triangles.append(Triangle(*sorted((
                                 region_indices[triangle.a],

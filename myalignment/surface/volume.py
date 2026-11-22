@@ -34,10 +34,6 @@ def _clip(polygon: list[XY], signed_distance: Callable[[XY], float]) -> list[XY]
 def _faces(surface: TinSurface):
     for triangle in surface.triangles:
         vertices = triangle.vertices(surface.points)
-        if len(surface.boundaries) and not surface.boundaries.contains_point(
-            sum(p.x for p in vertices) / 3, sum(p.y for p in vertices) / 3,
-        ):
-            continue
         polygon = [(p.x, p.y) for p in vertices]
         winding = _cross(*polygon)
         if abs(winding) < 1e-12:
@@ -61,8 +57,7 @@ def _integrate(polygon: list[XY], height: Callable[[XY], float]) -> float:
 def cut_fill_between(existing: TinSurface, design: TinSurface) -> tuple[float, float]:
     """공통 TIN 면적에서 원지형과 설계면의 표고차를 적분한다."""
     if (
-        existing.boundaries == design.boundaries
-        and existing.triangles == design.triangles
+        existing.triangles == design.triangles
         and len(existing.points) == len(design.points)
         and all((a.x, a.y) == (b.x, b.y) for a, b in zip(existing.points, design.points))
     ):
@@ -104,10 +99,6 @@ def _cut_fill_on_mesh(existing: TinSurface, design_elevation: Callable[[int], fl
     cut = fill = 0.0
     for triangle in existing.triangles:
         a, b, c = triangle.vertices(existing.points)
-        if len(existing.boundaries) and not existing.boundaries.contains_point(
-            (a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3,
-        ):
-            continue
         polygon = [(a.x, a.y), (b.x, b.y), (c.x, c.y)]
         heights = (
             a.z - design_elevation(triangle.a),
