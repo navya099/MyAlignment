@@ -26,16 +26,14 @@ python -m pip install scipy
 from pathlib import Path
 from math import isclose
 
-from myalignment.alignment.alignment_builder import AlignmentBuilder
-from myalignment.assembly.assembly import AssemblyBuilder
+from myalignment.alignment import AlignmentBuilder
+from myalignment.assembly import AssemblyBuilder
 from myalignment.assembly.subassemblies.basic_lane import BasicLane
 from myalignment.corridor.corridor_3d_renderer import Corridor3DRenderer
-from myalignment.corridor.corridor_builder import CorridorBuilder
-from myalignment.corridor.surface_builder import CorridorSurfaceSpec
+from myalignment.corridor import CorridorBuilder, CorridorSurfaceSpec
 from myalignment.export.dxf_3d_writer import Dxf3DWriter
 from myalignment.export.dxf_writer import DxfWriter
-from myalignment.profile.profile import ProfileBuilder
-from myalignment.profile.profiletype import ProfileType
+from myalignment.profile import ProfileBuilder, ProfileType
 from myalignment.render.alignment_renderer import AlignmentRenderer
 from myalignment.section.section_view_builder import SectionViewBuilder
 
@@ -50,7 +48,7 @@ axis = (
 assembly = AssemblyBuilder().add_both(lambda side: BasicLane(side=side)).build()
 corridor = (
     CorridorBuilder("Road")
-    .add_baseline("BL Main", axis.name, grade.name, axis.start_station, axis.end_station)
+    .add_baseline_from_alignment(axis, grade, name="BL Main")
     .add_region("Road section", axis.start_station, axis.end_station, assembly, baseline_name="BL Main")
     .build()
 )

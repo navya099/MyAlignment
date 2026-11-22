@@ -26,3 +26,9 @@ python -m mkdocs serve
 기본 주소는 `http://127.0.0.1:8000`입니다. 정적 HTML 파일은 `python -m mkdocs build --strict`로 생성하며 출력 폴더는 `site/`입니다.
 
 HTML의 **API 레퍼런스** 메뉴에서 패키지별 클래스와 공개 메서드, 속성을 검색할 수 있습니다. API 페이지는 빌드할 때 소스에서 생성합니다.
+
+## 배포 검증
+
+새 가상환경에 `python -m pip install .`로 설치한 뒤 `python scripts/check_installed_examples.py`를 실행하면 가이드 예제와 시작하기 예제의 DXF 출력을 확인합니다. GitHub Actions에서도 패키지 설치, 예제, 회귀 테스트, 문서 빌드를 검증합니다.
+
+문서 사이트를 공개하려면 저장소의 **Settings → Pages**에서 소스를 **GitHub Actions**로 지정하고 기본 브랜치에 있는 **Publish documentation to GitHub Pages** 워크플로를 실행합니다. 게시 주소는 워크플로의 배포 결과에 표시됩니다.

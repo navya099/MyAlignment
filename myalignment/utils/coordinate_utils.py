@@ -12,7 +12,7 @@ def convert_coordinates(coords, src: int, target: int):
     좌표 변환 (단일 또는 리스트/튜플)
 
     Args:
-        coords: (x, y) 또는 [(x1, y1), (x2, y2), ...]
+        coords (tuple | list): 평면 좌표 한 쌍 또는 비어 있지 않은 좌표 쌍 목록.
         src: 소스 EPSG
         target: 타겟 EPSG
     Returns:

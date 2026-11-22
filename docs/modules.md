@@ -1,6 +1,16 @@
 # 모듈 찾아보기
 
-주요 진입점 열의 경로 앞에 `myalignment.`를 붙입니다. 예를 들어 `alignment.alignment_builder.AlignmentBuilder`는 `from myalignment.alignment.alignment_builder import AlignmentBuilder`로 가져옵니다. 하위 패키지의 주요 진입점과 해당 작업의 실행 예제를 연결했습니다.
+자주 쓰는 클래스는 하위 패키지에서 직접 가져올 수 있습니다. 예를 들어 `from myalignment.alignment import AlignmentBuilder`를 사용합니다. 아래 표의 구현 모듈 경로도 사용할 수 있습니다.
+
+| 패키지 | 직접 가져올 수 있는 클래스 |
+| --- | --- |
+| `myalignment.alignment` | `Alignment`, `AlignmentBuilder` |
+| `myalignment.profile` | `Profile`, `ProfileBuilder`, `ProfileType` |
+| `myalignment.assembly` | `Assembly`, `AssemblyBuilder` |
+| `myalignment.corridor` | `Corridor`, `CorridorBuilder`, `RailCorridorBuilder`, `CorridorSurfaceSpec` |
+| `myalignment.surface` | `TinSurface`, `TinSurfaceBuilder` |
+
+아래 경로에는 `myalignment.`를 붙입니다.
 
 | 패키지 | 주요 진입점 | 예제와 설명 |
 | --- | --- | --- |
@@ -29,7 +39,11 @@
 ## 도로 편구배
 
 ```python
-from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.alignment import AlignmentBuilder
+from myalignment.assembly import AssemblyBuilder
+from myalignment.assembly.subassemblies.basic_lane import BasicLane
+from myalignment.corridor import CorridorBuilder
+from myalignment.section.section_view_builder import SectionViewBuilder
 from myalignment.superelevation.critical_station import (
     CrossSegmentType, SuperelevationCriticalStation, TransitionRegionType,
 )
@@ -53,9 +67,14 @@ axis = (
 critical = axis.superelevation_at(49)
 assert critical.station == 50
 assert critical.get_slope(CrossSegmentType.RIGHT_OUT_LANE) == -0.04
+
+lane = AssemblyBuilder().add_right(BasicLane(width=4, slope=0)).build()
+corridor = CorridorBuilder().add_baseline_from_alignment(axis).add_region("Road", 0, 100, lane).build()
+section = SectionViewBuilder.build_data(corridor, axis, 50)
+assert any(link.start.offset == 0 and link.end.offset == 4 and link.slope == 0 for link in section.links)
 ```
 
-`superelevation_at()`은 해당 구간의 최근접 임계 측점을 조회합니다. 코리더의 `cant_curve`는 철도 캔트용 설정입니다.
+`superelevation_at()`은 해당 구간의 최근접 임계 측점을 조회합니다. 도로 횡단면 계산에는 어셈블리에 지정한 경사가 적용됩니다. 영역의 `cant_curve`를 포함한 자세한 지원 범위는 [코리더 가이드](corridor.md#타깃-매핑)를 참고하세요.
 
 ## 좌표 변환
 

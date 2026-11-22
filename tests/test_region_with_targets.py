@@ -9,7 +9,7 @@ from myalignment.target.target_type import TargetType
 
 
 
-def test_region_with_target_mapping():
+def test_region_with_target_mapping(capsys):
     assembly = (
         AssemblyBuilder()
         .add_both(lambda side: BasicLane(width=3.5, side=side))
@@ -35,12 +35,13 @@ def test_region_with_target_mapping():
         target_mapping=targets,
     )
 
-    points, links = region.cross_section_at(50.0)
-    assert len(points) > 0
-
-    # Target이 매핑된 CatchPoint는 is_parametric=True
+    points, _ = region.cross_section_at(50.0)
     catch_points = [p for p in points if p.code.name == "CATCH_POINT"]
+    assert len(catch_points) == 2
     assert all(p.is_parametric for p in catch_points)
+    untargeted, _ = assembly.generate_cross_section()
+    assert [(p.x, p.z) for p in points] == [(p.x, p.z) for p in untargeted]
+    assert capsys.readouterr().out == ""
 
 
 def test_region_without_targets():

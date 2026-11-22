@@ -45,9 +45,18 @@ assert surface.area_2d == 120
 
 `frequency`는 영역의 기본 샘플 간격이며 시작과 끝 측점을 포함합니다. `CorridorSurfaceSpec.sample_frequency`로 표면 추출 간격을 따로 설정할 수 있습니다. 표면 코드는 `TOP`, `DATUM`, `RAIL_TOP` 등을 제공하며, 사용자 정의 추출에는 `CUSTOM`과 `link_code` 또는 `point_code`를 지정합니다. 어셈블리에 해당 코드가 있어야 표면을 만들 수 있습니다.
 
+선형 객체가 이미 있으면 `add_baseline_from_alignment(alignment, profile)`로 선형 이름과 전체 측점 범위를 가져올 수 있습니다. `name`, `start_station`, `end_station`으로 기준선 식별자와 범위를 지정할 수 있습니다. 종단을 전달한 경우 기준선의 전체 범위를 포함해야 합니다. 종단을 생략하면 기준 표고 0을 사용합니다. 이 방법으로 등록한 기준선도 표면을 추출할 때 선형 이름을 키로 하는 `alignments` 매핑을 사용합니다.
+
 ## 타깃 매핑
 
 `TargetMapping`에 논리 이름과 참조 객체의 이름을 등록합니다. 서브어셈블리는 자신이 사용하는 논리 이름으로 타깃을 읽을 수 있습니다. `TargetReference`는 이름과 유형을 보관하므로, 타깃 객체의 기하를 해석하는 방식은 해당 서브어셈블리 구현에 따릅니다.
+
+| 설정 | 기본 서브어셈블리의 동작 |
+| --- | --- |
+| `OFFSET` 또는 `ELEVATION` | 참조 이름을 저장합니다. `BasicLane`은 생성 시 지정한 폭과 경사를 사용합니다. |
+| `SURFACE` | `SideSlope`의 끝점에 `is_parametric` 표시를 남깁니다. 지표면과의 교점 계산 없이 고정 사면비와 높이로 끝점 좌표를 구합니다. |
+| 도로 편구배 | 선형에서 임계 측점 값을 조회할 수 있습니다. 코리더 횡단면과 그 횡단면으로 만든 표면에는 어셈블리의 경사가 적용됩니다. |
+| 철도 캔트 | 영역에 지정한 `cant_curve`가 해당 측점의 횡단면 표고에 반영됩니다. |
 
 ```python
 from myalignment.assembly.assembly import AssemblyBuilder
@@ -65,4 +74,5 @@ corridor = CorridorBuilder().add_region_with_assembly(
     "Road", 0, 40, assembly, targets=mapping,
 ).build()
 assert corridor.regions[0].target_mapping.get("EdgeOffset").object_name == "Edge"
+assert corridor.cross_section_at(20) == assembly.generate_cross_section()
 ```

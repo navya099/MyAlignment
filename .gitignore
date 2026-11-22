@@ -6,4 +6,5 @@ __pycache__/
 *.INFO
 MyAlignment.egg-info/
 /site/
+/build/
 /.venv/

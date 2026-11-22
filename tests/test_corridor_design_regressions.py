@@ -69,6 +69,43 @@ def test_explicit_baseline_must_cover_region():
         builder.add_region("Outside", 0, 12, lane, baseline_name="BL").build()
 
 
+def test_object_baseline_uses_raw_station_range_and_profile_for_surface():
+    alignment = (
+        AlignmentBuilder("Axis").with_pi_coords([(0, 0), (10, 0)]).with_start_station(100).build()
+        .add_station_equation(105, 200)
+    )
+    profile = ProfileBuilder("FG").add_tangent(100, 110, 10, 12).build()
+    assembly = AssemblyBuilder().add_right(BasicLane(width=3, slope=0)).build()
+    corridor = (
+        CorridorBuilder().add_baseline_from_alignment(alignment, profile)
+        .add_region("Region", 100, 110, assembly, baseline_name="Axis").build()
+    )
+
+    baseline, = corridor.baselines
+    assert (baseline.name, baseline.alignment_name, baseline.profile_name) == ("Axis", "Axis", "FG")
+    assert (baseline.start_station, baseline.end_station) == (100, 110)
+    surface = corridor.build_surface(
+        CorridorSurfaceSpec(), alignments={"Axis": alignment}, profiles={"FG": profile},
+    )
+    assert surface.elevation_at(5, -1) == pytest.approx(11)
+
+
+def test_object_baseline_validates_range_before_registering():
+    alignment = AlignmentBuilder("Axis").with_pi_coords([(0, 0), (10, 0)]).build()
+    profile = ProfileBuilder("FG").add_tangent(2, 8, 10, 12).build()
+    builder = CorridorBuilder()
+    with pytest.raises(ValueError, match="선형의 측점 범위"):
+        builder.add_baseline_from_alignment(alignment, end_station=11)
+    with pytest.raises(ValueError, match="종단 이름과 측점 범위"):
+        builder.add_baseline_from_alignment(alignment, profile)
+
+    builder.add_baseline_from_alignment(alignment, profile, start_station=2, end_station=8)
+    with pytest.raises(ValueError, match="이미 사용 중"):
+        builder.add_baseline_from_alignment(alignment)
+    baseline, = builder.build().baselines
+    assert (baseline.start_station, baseline.end_station) == (2, 8)
+
+
 def test_corridor_plan_area_uses_width_length_and_each_region():
     one_side = AssemblyBuilder().add_right(BasicLane(width=4, slope=0)).build()
     both_sides = (
