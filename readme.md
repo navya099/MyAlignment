@@ -11,7 +11,8 @@ myalignment는 직선, 원곡선, 완화곡선으로 구성된 선형을 다루�
 `cadgeom`의 `Point2d`를 사용합니다.
 
 ## Installation
-로컬 개발 환경에서 설치하려면:
+Python 3.11 이상에서 설치할 수 있습니다. pip는 `cadgeom`의 고정 리비전을
+GitHub에서 가져오므로 Git과 해당 저장소에 대한 접근이 필요합니다.
 
 ```bash
 pip install -e .
