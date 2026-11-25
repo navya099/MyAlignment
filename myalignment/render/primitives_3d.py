@@ -35,6 +35,11 @@ class Style3D:
     layer: str = "0"
     visible: bool = True
     linetype: str = "CONTINUOUS"
+    opacity: float = 1.0
+
+    def __post_init__(self):
+        if not math.isfinite(self.opacity) or not 0 <= self.opacity <= 1:
+            raise ValueError("opacity must be between 0 and 1")
 
 
 @dataclass(frozen=True, slots=True)

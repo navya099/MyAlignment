@@ -1,3 +1,4 @@
+from colorsys import hsv_to_rgb
 import json
 
 from myalignment.render.primitives_3d import Primitive3D, PrimitiveType3D
@@ -33,6 +34,8 @@ class Scene3DSerializer:
             return None
         attributes = {"color": cls._color_to_hex(style.color), "layer": style.layer or "0"}
         kind = primitive.type
+        if kind in (PrimitiveType3D.TRIANGLE, PrimitiveType3D.MESH) and style.opacity != 1:
+            attributes["opacity"] = style.opacity
         points = [[point.x, point.y, point.z] for point in primitive.points]
         if kind is PrimitiveType3D.POINT:
             return {"type": "point", "position": points[0], **attributes}
@@ -51,4 +54,14 @@ class Scene3DSerializer:
 
     @staticmethod
     def _color_to_hex(aci_color: int) -> str:
-        return _ACI_COLORS[aci_color] if 0 <= aci_color < len(_ACI_COLORS) else "#CCCCCC"
+        if 0 <= aci_color < len(_ACI_COLORS):
+            return _ACI_COLORS[aci_color]
+        if 10 <= aci_color <= 249:
+            hue, shade = divmod(aci_color - 10, 10)
+            value = (255, 165, 127, 76, 38)[shade // 2]
+            rgb = hsv_to_rgb(hue / 24, 0.5 if shade % 2 else 1.0, value)
+            return "#" + "".join(f"{int(channel):02X}" for channel in rgb)
+        if 250 <= aci_color <= 255:
+            gray = (51, 80, 105, 130, 190, 255)[aci_color - 250]
+            return f"#{gray:02X}{gray:02X}{gray:02X}"
+        return "#CCCCCC"

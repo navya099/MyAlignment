@@ -55,6 +55,7 @@ _HTML_TEMPLATE = Template("""<!doctype html>
   aside h2 { margin: 0 0 12px; font-size: 13px; color: #bfd2dc; }
   label { display: flex; align-items: start; gap: 8px; margin-bottom: 8px; overflow-wrap: anywhere; }
   input { accent-color: #80d8c9; margin: 2px 0; }
+  .swatch { width: 12px; height: 12px; flex: 0 0 12px; border-radius: 2px; margin-top: 2px; }
   footer { padding: 9px 20px; background: #18232c; color: #bfd2dc; border-top: 1px solid #344652; }
   #status { margin: 0; }
 </style>
@@ -107,6 +108,7 @@ async function render() {
   const local = ([x, y, z]) => [x - center.x, z - center.z, center.y - y];
 
   const groups = new Map();
+  const colors = new Map();
   const lines = new Map();
   const points = new Map();
   function geometry(positions) {
@@ -119,6 +121,7 @@ async function render() {
     if (!groups.has(prim.layer)) {
       const group = new THREE.Group();
       groups.set(prim.layer, group);
+      colors.set(prim.layer, prim.color);
       scene.add(group);
     }
     const group = groups.get(prim.layer);
@@ -126,8 +129,10 @@ async function render() {
       const shape = geometry(prim.vertices.flatMap(local));
       shape.setIndex(prim.indices.flat());
       shape.computeVertexNormals();
+      const opacity = prim.opacity ?? 1;
       group.add(new THREE.Mesh(shape, new THREE.MeshStandardMaterial({
         color: prim.color, side: THREE.DoubleSide, roughness: .85, flatShading: true,
+        opacity, transparent: opacity < 1, depthWrite: opacity === 1,
         polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
       })));
       meshCount++;
@@ -170,7 +175,16 @@ async function render() {
     input.type = 'checkbox';
     input.checked = true;
     input.addEventListener('change', () => { group.visible = input.checked; });
-    row.append(input, document.createTextNode(name));
+    row.append(input);
+    const entry = data.metadata?.link_surfaces?.[name];
+    if (entry) {
+      const swatch = document.createElement('span');
+      swatch.className = 'swatch';
+      swatch.style.backgroundColor = colors.get(name);
+      row.append(swatch, document.createTextNode(entry.name + ' (' + entry.area_2d.toFixed(1) + ' m²)'));
+    } else {
+      row.append(document.createTextNode(name));
+    }
     document.querySelector('#layers').append(row);
   }
   document.querySelector('aside').hidden = false;

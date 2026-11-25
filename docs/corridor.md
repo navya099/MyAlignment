@@ -132,6 +132,7 @@ from myalignment.corridor import CorridorBuilder
 from myalignment.corridor.link_surface_manager import LinkSurfaceManager
 from myalignment.corridor.link_surface_quantity import LinkSurfaceQuantity
 from myalignment.export.dxf_writer import DxfWriter
+from myalignment.render.link_surface_3d_renderer import LinkSurface3DPreview
 from myalignment.render.link_surface_renderer import LinkSurfaceRenderer
 from myalignment.render.scene import Scene
 
@@ -145,6 +146,10 @@ manager = LinkSurfaceManager.from_corridor(corridor, name="Road", alignments={ax
 assert manager.get_by_link_code(LinkCode.PAVEMENT_TOP).surface.area_2d == 90
 assert LinkSurfaceQuantity.from_manager(manager).get_by_code(LinkCode.PAVEMENT_BOTTOM).area_3d == 90
 DxfWriter(LinkSurfaceRenderer.render(Scene(), manager)).write("link-surfaces.dxf")
+scene3d = LinkSurface3DPreview.preview_combined(
+    manager, "link-surfaces-3d.html", dxf_path="link-surfaces-3d.dxf", z_scale=2,
+)
+assert scene3d.metadata["link_surfaces"]
 ```
 
 - `SINGLE_LINK`는 하나의 `link_code`를, `MULTI_LINK`는 여러 `link_codes`를 한 표면으로 추출합니다.
@@ -153,3 +158,9 @@ DxfWriter(LinkSurfaceRenderer.render(Scene(), manager)).write("link-surfaces.dxf
 - `overhang_correction=True`는 투영이 정확히 겹치고 한 면이 다른 면보다 높을 때 위쪽 면을 선택합니다. 부분적으로 겹치거나 표고가 서로 교차하는 면은 오류를 반환합니다.
 
 `sample_frequency`를 생략하면 영역에 설정된 간격을 사용합니다. 링크 추출에서 `use_boundary=False`는 경계 객체 생성을 끄며, 삼각형의 연결은 그대로 유지됩니다. 면적 합계는 개별 표면의 합이므로 서로 겹치는 포장층도 각각 집계됩니다.
+
+### 링크 표면 3D 뷰
+
+3D 뷰에서 각 표면의 메쉬와 와이어프레임 레이어를 독립적으로 켜고 끌 수 있습니다. HTML의 색상 범례에는 표면 이름과 평면 면적이 표시됩니다. `LinkSurfaceSpec.color`를 지정하면 기본 코드 색상을 덮어씁니다. `opacity`는 HTML 메쉬에 적용되며 DXF R12 출력은 색상과 레이어를 저장합니다.
+
+`LinkSurface3DPreview.preview_flat(manager, path, z_offset_per_link=5)`는 층마다 Z 간격을 줍니다. `LinkSurface3DScene.from_manager(manager).merge_selected(codes)`는 고른 단일 코드의 장면을 합칩니다. `LinkSurface3DExport.export_all(manager, output_dir)`은 통합 DXF·HTML과 단일 코드별 DXF를 저장합니다. 여러 코드를 병합하거나 점으로 추출한 표면은 통합 장면에 포함됩니다. [3D HTML 열기](rendering.md#횡단-뷰-3d-dxf와-브라우저-미리보기)
