@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import replace
 import math
+from typing import TYPE_CHECKING
 
 from cadgeom import Point2d
 
@@ -11,6 +12,7 @@ from myalignment.render.section_grade_break_renderer import SectionViewGradeBrea
 from myalignment.render.section_label_renderer import SectionLabelRenderer
 from myalignment.render.section_projection_renderer import SectionProjectionRenderer
 from myalignment.render.scene import Layer, Scene
+from myalignment.render.slope_pattern_section_renderer import SlopePatternSectionRenderer
 from myalignment.render.stagger_config import StaggerConfig
 from myalignment.render.staggered_renderer import StaggeredRenderer
 from myalignment.section.label_set import SectionLabelSet
@@ -18,6 +20,10 @@ from myalignment.section.label_type import SectionLabelType
 from myalignment.section.section_projection import SectionProjection
 from myalignment.section.section_view_data import SectionViewData
 from myalignment.section.section_view_style import SectionViewStyle, section_projection
+
+
+if TYPE_CHECKING:
+    from myalignment.corridor.slope_pattern import SlopePattern
 
 
 def _ticks(low, high, interval):
@@ -36,11 +42,16 @@ class SectionViewRenderer:
         stagger_config: StaggerConfig | None = None,
         render_grade_breaks: bool = False,
         projections: Sequence[SectionProjection] = (),
+        slope_patterns: Iterable[SlopePattern] = (),
     ) -> Scene:
-        if not data.points and not data.surface_points and not projections:
+        slope_renderer = SlopePatternSectionRenderer
+        patterns = slope_renderer._at_station(slope_patterns, data.station)
+        if not data.points and not data.surface_points and not projections and not patterns:
             return scene
         style = style or SectionViewStyle()
-        lo, hi, bottom, top, plot = section_projection(data, style, projections=projections)
+        lo, hi, bottom, top, plot = section_projection(
+            data, style, projections=projections, extra_points=slope_renderer._extent_points(patterns),
+        )
 
         grid = Style(color=style.grid_color, layer=style.layer, lineweight=.15)
         axis = Style(color=style.axis_color, layer=style.layer, lineweight=style.axis_lineweight)
@@ -112,5 +123,7 @@ class SectionViewRenderer:
             scene = SectionViewGradeBreakRenderer._render_projected(scene, data, plot)
         if projections:
             scene = SectionProjectionRenderer._render_projected(scene, projections, plot, height, data.station)
+        if patterns:
+            scene = slope_renderer._render_projected(scene, patterns, plot, height)
         scene = replace(scene, metadata={**scene.metadata, "section_station": data.station})
         return StaggeredRenderer.apply_stagger(scene, stagger_config) if stagger_config is not None else scene

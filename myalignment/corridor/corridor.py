@@ -13,6 +13,8 @@ from myalignment.target.reference import TargetObjectType
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
     from myalignment.corridor.feature_line_spec import CorridorFeatureLineSpec
+    from myalignment.corridor.slope_pattern import SlopePatternCollection
+    from myalignment.corridor.slope_pattern_style import SlopePatternStyle
     from myalignment.corridor.surface_builder import CorridorSurfaceSpec
     from myalignment.profile.profile import Profile
     from myalignment.surface.tin_surface import TinSurface
@@ -242,6 +244,19 @@ class Corridor:
         else:
             raise ValueError("standard must be road or rail")
         return replace(self, feature_lines=result)
+
+    def generate_slope_patterns(
+        self, style: SlopePatternStyle | None = None, *, alignments: Mapping[str, Alignment],
+        profiles: Mapping[str, Profile] | None = None, sample_frequency: float | None = None,
+        baseline_name: str | None = None,
+    ) -> SlopePatternCollection:
+        """코리더 사면 링크의 평면·3D·횡단 표시용 패턴을 생성한다."""
+        from myalignment.corridor.slope_pattern_generator import SlopePatternGenerator
+
+        return SlopePatternGenerator.generate_for_corridor(
+            self, style, alignments=alignments, profiles=profiles,
+            sample_frequency=sample_frequency, baseline_name=baseline_name,
+        )
 
     def build_surface(
         self,

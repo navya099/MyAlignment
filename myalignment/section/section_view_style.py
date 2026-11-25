@@ -70,7 +70,7 @@ class SectionViewStyle:
         )
 
 
-def section_projection(data, style, min_elev=None, max_elev=None, *, projections=()):
+def section_projection(data, style, min_elev=None, max_elev=None, *, projections=(), extra_points=()):
     """횡단 도형과 레이블이 공유하는 등척도 기반 좌표 변환."""
     lo, hi = min(0.0, data.min_offset), max(0.0, data.max_offset)
     low_z, high_z = data.min_elevation, data.max_elevation
@@ -84,6 +84,11 @@ def section_projection(data, style, min_elev=None, max_elev=None, *, projections
             base = item.pier_bottom_elevation
         low_z = min(low_z, base) if has_section else base
         high_z = max(high_z, item.top_elevation) if has_section else item.top_elevation
+        has_section = True
+    for offset, elevation in extra_points:
+        lo, hi = min(lo, offset), max(hi, offset)
+        low_z = min(low_z, elevation) if has_section else elevation
+        high_z = max(high_z, elevation) if has_section else elevation
         has_section = True
     bottom = low_z - 1 if min_elev is None else min_elev
     top = high_z + 1 if max_elev is None else max_elev

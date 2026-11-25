@@ -201,3 +201,46 @@ FeatureLine3DPreview.preview(manager, "feature-lines.html", "feature-lines-3d.dx
 - `link_code`는 링크의 시작점 또는 끝점을 사용합니다. `use_start`와 `use_end`를 함께 켜면 중점을 사용합니다. `offset`은 지정 횡거에서 횡단 링크를 보간하고, 여러 표고가 겹치면 가장 높은 점을 선택합니다.
 - `specs`를 생략하고 `standard="road"` 또는 `standard="rail"`을 사용하면 표준 코드로 추출합니다. 코드가 없는 선은 빈 결과가 됩니다. `sample_frequency`로 영역 기본 표본 간격을 덮어쓰고 `baseline_name`으로 기준선을 선택할 수 있습니다.
 - `segments`는 코드 누락, 영역 공백, 좌표가 달라지는 경계에서 선을 분리합니다. `point_at_station()`에 여러 좌표가 있는 측점을 전달하면 오류가 발생합니다. 기준선이 겹치는 경우 `baseline_name`으로 범위를 좁힐 수 있습니다.
+
+## 코리더 사면 패턴
+
+`Corridor.generate_slope_patterns()`은 영역의 `LinkCode.SLOPE` 링크에 해치, 격자, 계단, 말뚝 또는 소단을 배치합니다. 기준선의 평면선형과 종단을 사용하고 횡단면의 캔트를 반영합니다. 패턴은 도면에 표시할 형상이며 코리더 횡단이나 TIN을 변경하지 않습니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.assembly.assembly import AssemblyBuilder
+from myalignment.assembly.subassemblies.basic_lane import BasicLane
+from myalignment.assembly.subassemblies.side_slope import SideSlope
+from myalignment.corridor.corridor_builder import CorridorBuilder
+from myalignment.corridor.slope_pattern_style import SlopePatternStyle
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.render.scene import Scene
+from myalignment.render.section_view_renderer import SectionViewRenderer
+from myalignment.render.slope_pattern_2d_renderer import SlopePattern2DRenderer
+from myalignment.render.slope_pattern_3d_renderer import SlopePattern3DPreview
+from myalignment.section.section_view_builder import SectionViewBuilder
+
+axis = AlignmentBuilder("Main").with_pi_coords([(0, 0), (40, 0)]).build()
+assembly = (
+    AssemblyBuilder().add_both(lambda side: BasicLane(side=side))
+    .add_both(lambda side: SideSlope(side=side, height=4)).build()
+)
+corridor = (
+    CorridorBuilder("Road").add_baseline_from_alignment(axis)
+    .add_region("Slopes", 0, 40, assembly, frequency=5).build()
+)
+patterns = corridor.generate_slope_patterns(SlopePatternStyle.stakes_style(), alignments={axis.name: axis})
+assert patterns.total_elements() > 0
+DxfWriter(SlopePattern2DRenderer.render(Scene(), patterns)).write("slope-plan.dxf")
+SlopePattern3DPreview.preview(patterns, "slope.html", "slope-3d.dxf")
+data = SectionViewBuilder.build_data(corridor, axis, 20)
+section = SectionViewRenderer.render(
+    Scene(), data, slope_patterns=patterns.at_station(20, baseline_name=axis.name, region_name="Slopes"),
+)
+DxfWriter(section).write("slope-section.dxf")
+```
+
+- 기본 패턴은 해치입니다. `grid_style()`, `steps_style()`, `stakes_style()`, `berms_style()`로 바꿀 수 있고, `SlopePatternType.NONE`을 선택하면 패턴을 끕니다.
+- 간격과 크기의 단위는 미터입니다. 표본 측점은 영역 간격을 따르며 격자는 `spacing_horizontal`을 사용합니다. `sample_frequency`를 전달하면 표본 측점 간격을 직접 지정할 수 있습니다. 해치와 격자의 종방향 선은 같은 영역 안에서 연결됩니다.
+- 계단 높이와 폭은 각각 단의 최대 높이와 폭입니다. 소단의 높이 간격은 `berm_interval`입니다. 말뚝 간격은 사면을 따라 측정하고 말뚝은 수직으로 세웁니다. 구배는 선형에 가까운 쪽에서 바깥쪽으로 계산합니다.
+- 기준선의 종단이 선형에 등록되지 않은 경우 `profiles`에 종단 이름으로 전달합니다. 여러 기준선이나 인접 영역이 횡단 측점을 공유할 경우 `at_station()`의 `baseline_name`과 `region_name`으로 표시할 패턴을 선택합니다.
