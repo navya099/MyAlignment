@@ -118,3 +118,38 @@ assert any(item.style.layer == "C-TURNOUT-3D-BRANCH" for item in scene.primitive
 통합 장면의 레일 상단은 기준선 종단 표고에 맞춥니다. 별도 분기선이 PC에 접속하면 분기 레일의 끝 표고는 그 기준선 종단에서 읽고, 그 외에는 본선 PF 표고를 사용합니다. 크로스오버 연결 레일도 양쪽 접속 측점의 표고를 보간합니다. 종단이 지정되지 않은 기준선은 표고 0을 사용합니다. 연결 레일의 개별 캔트는 계산하지 않습니다.
 
 특수 횡단면을 지정하려면 `turnout_assembly=`에 어셈블리를 전달합니다. `TurnoutAssembly`는 부호 있는 고정 횡거로 분기 레일을 표시하는 횡단면입니다. 일반적인 통합 뷰에서는 본선 횡단면을 유지하고 분기곡선은 별도의 레일 경로로 배치합니다. [3D HTML 열기](rendering.md#횡단-뷰-3d-dxf와-브라우저-미리보기)
+
+## 링크 코드별 표면
+
+`LinkSurfaceManager.from_corridor()`는 코리더의 링크 코드별 TIN을 만듭니다. 각 횡단면에서 같은 링크를 다음 측점의 링크에 연결하므로, 같은 코드로 분류된 좌우 사면이나 떨어진 코리더 영역 사이의 빈 공간이 유지됩니다. 좌표와 표고에는 기준선, 종단 및 영역 캔트가 반영됩니다.
+
+```python
+from myalignment.alignment import AlignmentBuilder
+from myalignment.assembly import AssemblyBuilder
+from myalignment.assembly.codes import LinkCode
+from myalignment.assembly.subassemblies.basic_lane import BasicLane
+from myalignment.corridor import CorridorBuilder
+from myalignment.corridor.link_surface_manager import LinkSurfaceManager
+from myalignment.corridor.link_surface_quantity import LinkSurfaceQuantity
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.render.link_surface_renderer import LinkSurfaceRenderer
+from myalignment.render.scene import Scene
+
+axis = AlignmentBuilder("Main").with_pi_coords([(0, 0), (30, 0)]).build()
+lane = AssemblyBuilder().add_right(BasicLane(width=3, slope=0)).build()
+corridor = (
+    CorridorBuilder("Road").add_baseline_from_alignment(axis)
+    .add_region("Paving", 0, 30, lane, baseline_name=axis.name).build()
+)
+manager = LinkSurfaceManager.from_corridor(corridor, name="Road", alignments={axis.name: axis})
+assert manager.get_by_link_code(LinkCode.PAVEMENT_TOP).surface.area_2d == 90
+assert LinkSurfaceQuantity.from_manager(manager).get_by_code(LinkCode.PAVEMENT_BOTTOM).area_3d == 90
+DxfWriter(LinkSurfaceRenderer.render(Scene(), manager)).write("link-surfaces.dxf")
+```
+
+- `SINGLE_LINK`는 하나의 `link_code`를, `MULTI_LINK`는 여러 `link_codes`를 한 표면으로 추출합니다.
+- `ALL_LINKS`는 코드를 표면별로 분리합니다. `link_codes`를 지정하면 해당 코드만 선택합니다. 수직 링크처럼 평면 투영 면적이 없는 코드는 일괄 추출에서 건너뜁니다.
+- `POINT_BASED`는 `point_code`에 해당하는 점을 기존 코리더 TIN 방식으로 추출합니다.
+- `overhang_correction=True`는 투영이 정확히 겹치고 한 면이 다른 면보다 높을 때 위쪽 면을 선택합니다. 부분적으로 겹치거나 표고가 서로 교차하는 면은 오류를 반환합니다.
+
+`sample_frequency`를 생략하면 영역에 설정된 간격을 사용합니다. 링크 추출에서 `use_boundary=False`는 경계 객체 생성을 끄며, 삼각형의 연결은 그대로 유지됩니다. 면적 합계는 개별 표면의 합이므로 서로 겹치는 포장층도 각각 집계됩니다.

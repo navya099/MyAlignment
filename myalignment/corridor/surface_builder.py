@@ -43,10 +43,12 @@ class CorridorSurfaceSpec:
     link_code: Enum | None = None
     point_code: Enum | None = None
     use_boundary: bool = True
-    sample_frequency: float = 5.0
+    sample_frequency: float | None = 5.0
 
     def __post_init__(self):
-        if not math.isfinite(self.sample_frequency) or self.sample_frequency <= 0:
+        if self.sample_frequency is not None and (
+            not math.isfinite(self.sample_frequency) or self.sample_frequency <= 0
+        ):
             raise ValueError("sample_frequency must be finite and positive")
         if self.code is CorridorSurfaceCode.CUSTOM and self.link_code is None and self.point_code is None:
             raise ValueError("CUSTOM requires a link_code or point_code")
@@ -92,19 +94,7 @@ class CorridorSurfaceBuilder:
             if not sections:
                 continue
 
-            baseline = corridor.baseline_for_region(region)
-            if baseline is None:
-                raise ValueError(f"{region.name}: expected exactly one baseline covering the region")
-            alignment = alignments.get(baseline.alignment_name)
-            if alignment is None:
-                raise ValueError(f"Missing alignment: {baseline.alignment_name}")
-            profile = None
-            if baseline.profile_name:
-                profile = next((p for p in alignment.profiles if p.name == baseline.profile_name), None)
-                if profile is None and profiles is not None:
-                    profile = profiles.get(baseline.profile_name)
-                if profile is None:
-                    raise ValueError(f"Missing profile: {baseline.profile_name}")
+            alignment, profile = _resolve_baseline(corridor, region, alignments, profiles)
 
             left_edge, right_edge = [], []
             region_points: dict[tuple[float, float], TinPoint] = {}
@@ -160,6 +150,26 @@ class CorridorSurfaceBuilder:
         if not surface.triangles:
             raise ValueError("Selected corridor points do not form a TIN")
         return surface
+
+
+def _resolve_baseline(
+    corridor: Corridor, region: CorridorRegion, alignments: Mapping[str, Alignment],
+    profiles: Mapping[str, Profile] | None,
+) -> tuple[Alignment, Profile | None]:
+    baseline = corridor.baseline_for_region(region)
+    if baseline is None:
+        raise ValueError(f"{region.name}: expected exactly one baseline covering the region")
+    alignment = alignments.get(baseline.alignment_name)
+    if alignment is None:
+        raise ValueError(f"Missing alignment: {baseline.alignment_name}")
+    profile = None
+    if baseline.profile_name:
+        profile = next((p for p in alignment.profiles if p.name == baseline.profile_name), None)
+        if profile is None and profiles is not None:
+            profile = profiles.get(baseline.profile_name)
+        if profile is None:
+            raise ValueError(f"Missing profile: {baseline.profile_name}")
+    return alignment, profile
 
 
 def _section_points(

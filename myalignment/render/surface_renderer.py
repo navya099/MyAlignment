@@ -19,10 +19,11 @@ class TinSurfaceRenderer:
     def render(
         cls, surface: TinSurface, scene: Scene | None = None,
         show_triangles: bool = True, show_boundary: bool = True,
+        *, triangle_layer: Layer | None = None, boundary_layer: Layer | None = None,
     ) -> Scene:
         scene = Scene() if scene is None else scene
         if show_triangles:
-            layer = Layer(cls.TRIANGLE_LAYER, color=8)
+            layer = triangle_layer or Layer(cls.TRIANGLE_LAYER, color=8)
             style = Style(color=layer.color, layer=layer.name)
             scene = scene.add_layer(layer).add_all(
                 Primitive.polyline(
@@ -32,7 +33,7 @@ class TinSurfaceRenderer:
                 for triangle in surface.triangles
             )
         if show_boundary and surface.boundaries:
-            layer = Layer(cls.BOUNDARY_LAYER, color=1, lineweight=0.5)
+            layer = boundary_layer or Layer(cls.BOUNDARY_LAYER, color=1, lineweight=0.5)
             style = Style(color=layer.color, lineweight=layer.lineweight, layer=layer.name)
             scene = scene.add_layer(layer).add_all(
                 Primitive.polyline(
