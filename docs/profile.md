@@ -131,3 +131,37 @@ DxfWriter(scene).write("profile-split.dxf")
 - `MANUAL`은 오름차순 원시 측점 목록을 사용합니다. 전체 범위 밖의 측점은 건너뜁니다. `NONE`은 한 패널로 표시합니다.
 
 `overlap_station`은 내부 경계의 양쪽 패널을 각각 지정 거리만큼 확장합니다. 측점 레이블은 해당 측점이 있는 패널에 나타나며, Depth 레이블은 두 끝점이 모두 패널에 포함될 때 표시됩니다. `include_start_label=False`는 패널 제목 아래의 측점 범위 표기를 숨깁니다. 패널별 표시 범위와 도면 이동량은 `scene.metadata["panels"]`에서 조회할 수 있습니다.
+
+## 종단 뷰 객체 투영
+
+`ProjectionBuilder`와 `ProjectionComposer`는 평면 객체를 종단 뷰의 원시 측점·표고로 변환합니다. `ProfileViewRenderer.render(..., projections=...)`와 `ProfileViewSplitComposer.compose(..., projections=...)`에 같은 투영 결과를 전달할 수 있습니다.
+
+```python
+from myalignment.alignment import AlignmentBuilder
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.featureline.feature_line import FeatureLine
+from myalignment.featureline.vertex import FeatureLineVertex
+from myalignment.profile import ProfileBuilder, ProjectionBuilder, ProjectionComposer
+from myalignment.profile.view_style import ProfileViewStyle
+from myalignment.render.primitives_3d import Point3D
+from myalignment.render.profile_view_renderer import ProfileViewRenderer
+
+axis = (
+    AlignmentBuilder("Main").with_pi_coords([(0, 0), (100, 0)])
+    .with_start_station(1000).with_bridge("교량 A", 1020, 1060).build()
+)
+profile = ProfileBuilder("FG").add_tangent(1000, 1100, 10, 30).build()
+crossing = AlignmentBuilder("Cross").with_pi_coords([(70, -20), (70, 20)]).build()
+feature = FeatureLine("Ridge", (FeatureLineVertex(10, 5, 30), FeatureLineVertex(60, 8, 45)))
+projections = ProjectionComposer.project_all(axis, profile, [crossing], [feature])
+projections.append(ProjectionBuilder.project_point(axis, profile, Point3D(90, 8, 29), name="Survey"))
+assert projections[-1].start_station == 1090
+scene = ProfileViewRenderer.render(
+    [profile], axis.name, ProfileViewStyle(vertical_exaggeration=3), projections=projections,
+)
+DxfWriter(scene).write("profile-projections.dxf")
+```
+
+교량·터널은 표시 가능한 구조물 구간의 중앙에서 참조 종단 표고를 읽습니다. 교차 선형은 참조 종단 범위 안에서 발견된 교차점마다 표시합니다. 형상선과 관로 경로는 입력 정점 순서와 Z 좌표를 유지합니다. 점과 블록 삽입점은 명시한 표고, 점의 Z, 참조 종단 표고 순으로 사용합니다. 평면 투영에는 선형의 최근접점을 사용하므로 선형 끝의 바깥쪽에 있는 점은 끝 측점에 투영될 수 있습니다.
+
+관로는 `project_pipe()`에 3D 중심선 좌표를 전달합니다. 블록은 `ProjectionObjectType.BLOCK` 스타일을 지정한 삽입점으로 표현합니다. 분할 뷰에서는 경계에서 경로 표고를 보간하며, 패널을 벗어났다가 다시 들어오는 경로는 별도 조각으로 그립니다.

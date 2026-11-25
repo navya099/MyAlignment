@@ -19,6 +19,7 @@ from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRend
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.profile_label_renderer import ProfileLabelRenderer
 from myalignment.render.profile_renderer import ProfileRenderer, _entity_ranges
+from myalignment.render.projection_renderer import ProjectionRenderer
 from myalignment.render.scene import Layer, Scene
 from myalignment.render.stagger_config import StaggerConfig
 from myalignment.render.stagger_presets import StaggerConfigPresets
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
     from myalignment.profile.depth_label import DepthLabel
     from myalignment.profile.profile import Profile
     from myalignment.profile.station_label import StationElevationLabel
+    from myalignment.profile.view_projection import ProfileViewProjection
 
 
 def _ticks(start: float, end: float, interval: float) -> list[float]:
@@ -88,12 +90,14 @@ class ProfileViewRenderer:
         render_grade_breaks: bool = True,
         stagger_config: StaggerConfig | None = None,
         station_range: tuple[float, float] | None = None,
+        projections: Sequence[ProfileViewProjection] | None = None,
     ) -> Scene:
         """종단 뷰를 렌더링하고 지정한 레이블을 배치한다.
 
         수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다.
         depth_labels에는 두 원시 측점 사이를 측정하는 레이블을 전달한다.
         station_range를 지정하면 해당 원시 측점 구간만 그린다.
+        projections에는 원시 측점과 표고로 변환한 객체를 전달한다.
         """
         scene = Scene() if scene is None else scene
         valid_profiles = tuple(profile for profile in profiles if profile.is_valid)
@@ -109,8 +113,15 @@ class ProfileViewRenderer:
             if not math.isfinite(start) or not math.isfinite(end) or start >= end:
                 raise ValueError("station_range must be finite and increasing")
             window_elevations = [z for profile in valid_profiles for z in _elevations(profile, station_range)]
-        low = (min(window_elevations) if window_elevations else min(p.min_elevation for p in valid_profiles)) - 5
-        high = (max(window_elevations) if window_elevations else max(p.max_elevation for p in valid_profiles)) + 5
+        if not window_elevations:
+            window_elevations = [value for profile in valid_profiles
+                                 for value in (profile.min_elevation, profile.max_elevation)]
+        window_elevations.extend(
+            point.elevation for projection in projections or ()
+            if projection.style.show_range or projection.style.show_marker or projection.style.show_label
+            for path in projection.clipped_paths((start, end)) for point in path
+        )
+        low, high = min(window_elevations) - 5, max(window_elevations) + 5
         viewport = Viewport(ViewportType.PROFILE, style.vertical_exaggeration)
 
         grid = []
@@ -216,6 +227,8 @@ class ProfileViewRenderer:
                 if station_range is None or start <= label.start_station < label.end_station <= end
             )
             scene = DepthLabelRenderer.render_multiple(scene, selected_depth, profiles, style.vertical_exaggeration)
+        if projections:
+            scene = ProjectionRenderer.render(scene, projections, style, min_sta=start, max_sta=end)
 
         scene = replace(scene, metadata={
             **scene.metadata,

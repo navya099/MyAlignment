@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from myalignment.profile.profile import Profile
     from myalignment.profile.station_label import StationElevationLabel
     from myalignment.profile.view_band import ProfileViewBand
+    from myalignment.profile.view_projection import ProfileViewProjection
     from myalignment.profile.view_split_config import ProfileViewSplitConfig
     from myalignment.profile.view_style import ProfileViewStyle
     from myalignment.render.stagger_config import StaggerConfig
@@ -61,6 +62,7 @@ class ProfileViewSplitRenderer:
         depth_labels: Sequence[DepthLabel] | None = None,
         *,
         stagger_config: StaggerConfig | None = None,
+        projections: Sequence[ProfileViewProjection] | None = None,
         **view_options,
     ) -> Scene:
         """여러 종단의 전체 범위를 분할하고 입력 순서의 첫 유효 종단에서 PVI를 읽는다.
@@ -78,6 +80,7 @@ class ProfileViewSplitRenderer:
             panel = ProfileViewRenderer.render(
                 profiles, alignment_name, view_style, bands, alignment=alignment,
                 labels=labels, depth_labels=depth_labels, stagger_config=stagger_config,
+                projections=projections,
                 station_range=(segment.start_station, segment.end_station), **view_options,
             )
             overlaps = []

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from myalignment.profile.profile import Profile
     from myalignment.profile.station_label import StationElevationLabel
     from myalignment.profile.view_band import ProfileViewBand
+    from myalignment.profile.view_projection import ProfileViewProjection
     from myalignment.profile.view_split_config import ProfileViewSplitConfig
     from myalignment.profile.view_style import ProfileViewStyle
     from myalignment.render.stagger_config import StaggerConfig
@@ -32,10 +33,12 @@ class ProfileViewSplitComposer:
         labels: Sequence[StationElevationLabel] | None = None,
         depth_labels: Sequence[DepthLabel] | None = None,
         stagger_config: StaggerConfig | None = None,
+        *,
+        projections: Sequence[ProfileViewProjection] | None = None,
         **view_options,
     ) -> Scene:
         """각 패널에서 밴드와 레이블을 배치하고 겹침 방지를 적용한다."""
         return ProfileViewSplitRenderer.render(
             profiles, alignment_name, view_style, split_config, alignment, bands, labels, depth_labels,
-            stagger_config=stagger_config, **view_options,
+            stagger_config=stagger_config, projections=projections, **view_options,
         )
