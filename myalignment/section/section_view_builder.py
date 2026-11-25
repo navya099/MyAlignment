@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 import math
 from typing import TYPE_CHECKING
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
     from myalignment.corridor.corridor import Corridor
     from myalignment.profile.profile import Profile
+    from myalignment.section.section_projection import SectionProjection
 
 
 class SectionViewBuilder:
@@ -49,12 +50,29 @@ class SectionViewBuilder:
         profile: Profile | None = None,
         offset_elevation: float = 0.0,
         baseline_name: str | None = None,
+        projections: Sequence[SectionProjection] = (),
     ) -> Scene:
         data = cls.build_data(
             corridor, alignment, station, profile=profile,
             offset_elevation=offset_elevation, baseline_name=baseline_name,
         )
-        return SectionViewRenderer.render(Scene(), data, style, label_set if label_set is not None else SectionLabelSet.standard())
+        return SectionViewRenderer.render(
+            Scene(), data, style, label_set if label_set is not None else SectionLabelSet.standard(),
+            projections=projections,
+        )
+
+    @classmethod
+    def single_with_projections(
+        cls, corridor: Corridor, alignment: Alignment, station: float,
+        projections: Sequence[SectionProjection], style: SectionViewStyle | None = None,
+        label_set: SectionLabelSet | None = None, *, profile: Profile | None = None,
+        offset_elevation: float = 0.0, baseline_name: str | None = None,
+    ) -> Scene:
+        """선택한 측점의 코리더 단면과 미리 계산한 투영 객체를 그린다."""
+        return cls.single(
+            corridor, alignment, station, style, label_set, profile=profile,
+            offset_elevation=offset_elevation, baseline_name=baseline_name, projections=projections,
+        )
 
     @classmethod
     def multiple(
@@ -62,10 +80,12 @@ class SectionViewBuilder:
         style: SectionViewStyle | None = None, column_gap: float = 20.0, *, label_set: SectionLabelSet | None = None,
         profile: Profile | None = None, offset_elevation: float = 0.0,
         baseline_name: str | None = None,
+        projections_by_station: Mapping[float, Sequence[SectionProjection]] | None = None,
     ) -> Scene:
         return cls.grid_layout(
             corridor, alignment, stations, style, max(1, len(stations)), column_gap,
             label_set=label_set, profile=profile, offset_elevation=offset_elevation, baseline_name=baseline_name,
+            projections_by_station=projections_by_station,
         )
 
     @classmethod
@@ -75,6 +95,7 @@ class SectionViewBuilder:
         column_gap: float = 20.0, row_gap: float = 20.0, *, label_set: SectionLabelSet | None = None,
         profile: Profile | None = None, offset_elevation: float = 0.0,
         baseline_name: str | None = None,
+        projections_by_station: Mapping[float, Sequence[SectionProjection]] | None = None,
     ) -> Scene:
         if not isinstance(columns, int) or columns <= 0:
             raise ValueError("columns must be a positive integer")
@@ -83,6 +104,7 @@ class SectionViewBuilder:
 
         style = style or SectionViewStyle()
         scene = Scene()
+        station_projections = projections_by_station or {}
         rendered = []
         primitives = []
         for station in stations:
@@ -92,6 +114,7 @@ class SectionViewBuilder:
             section = cls.single(
                 corridor, alignment, station, style, label_set, profile=profile,
                 offset_elevation=offset_elevation, baseline_name=baseline_name,
+                projections=station_projections.get(station, ()),
             )
             row, col = divmod(len(rendered), columns)
             x, y = col * (style.width + column_gap), -row * (style.height + row_gap)

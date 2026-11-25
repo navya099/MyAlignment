@@ -70,11 +70,23 @@ class SectionViewStyle:
         )
 
 
-def section_projection(data, style, min_elev=None, max_elev=None):
+def section_projection(data, style, min_elev=None, max_elev=None, *, projections=()):
     """횡단 도형과 레이블이 공유하는 등척도 기반 좌표 변환."""
     lo, hi = min(0.0, data.min_offset), max(0.0, data.max_offset)
-    bottom = data.min_elevation - 1 if min_elev is None else min_elev
-    top = data.max_elevation + 1 if max_elev is None else max_elev
+    low_z, high_z = data.min_elevation, data.max_elevation
+    has_section = bool(data.points or data.surface_points)
+    for item in projections:
+        if not (item.style.show_outline or item.style.show_marker or item.style.show_label):
+            continue
+        lo, hi = min(lo, item.left_offset), max(hi, item.right_offset)
+        base = item.bottom_elevation
+        if item.style.show_marker and item.pier_bottom_elevation is not None:
+            base = item.pier_bottom_elevation
+        low_z = min(low_z, base) if has_section else base
+        high_z = max(high_z, item.top_elevation) if has_section else item.top_elevation
+        has_section = True
+    bottom = low_z - 1 if min_elev is None else min_elev
+    top = high_z + 1 if max_elev is None else max_elev
     if not (math.isfinite(bottom) and math.isfinite(top) and bottom < top):
         raise ValueError("Elevation bounds must be finite and increasing")
     exaggeration = style.vertical_exaggeration

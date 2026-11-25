@@ -69,4 +69,46 @@ Corridor3DPreview.mesh(corridor, axis, "road-3d.html", sample_frequency=5)
 
 HTML은 현재 폴더에서 `python -m http.server 8765`를 실행하고 `http://127.0.0.1:8765/road-3d.html`에서 엽니다. 기본 뷰어는 Three.js를 CDN에서 불러옵니다. 오프라인 환경에는 동일 버전의 배포 디렉터리를 준비한 뒤 `three_module_base="./vendor"`처럼 지정합니다.
 
+## 횡단 뷰에 객체 투영
+
+`SectionProjectionComposer.project_all()`은 기준 선형에 등록된 구조물과 전달한 관로, 점, FeatureLine, 대상 선형을 지정한 횡단면에 투영합니다. 투영 결과는 `single_with_projections()` 또는 `grid_layout(projections_by_station=...)`에 전달합니다. 개별 객체에 표시 스타일을 지정하려면 `SectionProjectionBuilder`를 사용합니다.
+
+```python
+from cadgeom import Point2d
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.assembly.assembly import AssemblyBuilder
+from myalignment.assembly.subassemblies.basic_lane import BasicLane
+from myalignment.corridor.corridor_builder import CorridorBuilder
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.section.projection_composer import SectionProjectionComposer
+from myalignment.section.section_view_builder import SectionViewBuilder
+from myalignment.structure.bridge import Bridge
+
+axis = (
+    AlignmentBuilder("Axis").with_pi_coords([(0, 0), (40, 0)])
+    .with_structure(Bridge.create("Bridge", 15, 25, width=12, bottom_elevation=2.5))
+    .build()
+)
+assembly = AssemblyBuilder().add_both(lambda side: BasicLane(side=side)).build()
+corridor = (
+    CorridorBuilder("Road").add_baseline("BL", axis.name, "", 0, 40)
+    .add_region("Lane", 0, 40, assembly).build()
+)
+sections = {
+    station: SectionProjectionComposer.project_all(
+        axis, station,
+        pipes=[(Point2d(20, -6), -3, 1.2, "Drain")],
+        points=[(Point2d(30, 4), 1.5, "Survey point")],
+    )
+    for station in (20, 30)
+}
+scene = SectionViewBuilder.grid_layout(corridor, axis, [20, 30], columns=2, projections_by_station=sections)
+DxfWriter(scene).write("section-projections.dxf")
+```
+
+- 측점에는 측점 방정식 적용 전의 기하 측점을 사용합니다. 횡거는 진행 방향 기준 오른쪽이 양수입니다. 점과 관 중심의 횡단면까지 허용 거리는 기본 1m이며 `station_tolerance`로 지정합니다.
+- FeatureLine의 교차 표고는 선분에서 보간합니다. 횡단면 위에 놓인 선분은 그대로 연결합니다. 대상 선형은 교차 위치에서 해당 선형의 종단 표고를 사용합니다.
+- 구조물은 개략 단면으로 표시합니다. 교량의 기본 폭은 20m, 상판 두께는 2m입니다. `width`, `deck_height`, `pier_bottom_elevation` 메타데이터로 치수를 지정합니다. 터널은 `diameter`를 사용하며 기본값은 4m입니다. 하단 표고는 `bottom_elevation`, 해당 측점을 포함하는 종단, 0m 순서로 결정합니다. 기준 종단을 직접 선택하려면 `project_all(profile=...)`을 사용합니다.
+- 투영 레이어 이름, 외곽선, 마커, 레이블은 `SectionProjectionStyle`로 설정합니다. 원지형도 표시할 때는 `SectionViewComposer.with_surface(projections=...)`를 사용합니다.
+
 DXF writer는 R12 텍스트 DXF를 생성하고 한글은 CP949로 저장합니다. R12의 출력 범위에는 Civil 3D 편집 객체나 선가중치 속성이 포함되지 않습니다. Civil 3D에서 직접 파일을 여는 검증은 별도로 필요합니다.

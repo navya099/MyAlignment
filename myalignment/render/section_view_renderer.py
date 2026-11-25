@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 import math
 
@@ -8,11 +9,13 @@ from cadgeom import Point2d
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.section_grade_break_renderer import SectionViewGradeBreakRenderer
 from myalignment.render.section_label_renderer import SectionLabelRenderer
+from myalignment.render.section_projection_renderer import SectionProjectionRenderer
 from myalignment.render.scene import Layer, Scene
 from myalignment.render.stagger_config import StaggerConfig
 from myalignment.render.staggered_renderer import StaggeredRenderer
 from myalignment.section.label_set import SectionLabelSet
 from myalignment.section.label_type import SectionLabelType
+from myalignment.section.section_projection import SectionProjection
 from myalignment.section.section_view_data import SectionViewData
 from myalignment.section.section_view_style import SectionViewStyle, section_projection
 
@@ -32,11 +35,12 @@ class SectionViewRenderer:
         label_set: SectionLabelSet | None = None, *,
         stagger_config: StaggerConfig | None = None,
         render_grade_breaks: bool = False,
+        projections: Sequence[SectionProjection] = (),
     ) -> Scene:
-        if not data.points and not data.surface_points:
+        if not data.points and not data.surface_points and not projections:
             return scene
         style = style or SectionViewStyle()
-        lo, hi, bottom, top, plot = section_projection(data, style)
+        lo, hi, bottom, top, plot = section_projection(data, style, projections=projections)
 
         grid = Style(color=style.grid_color, layer=style.layer, lineweight=.15)
         axis = Style(color=style.axis_color, layer=style.layer, lineweight=style.axis_lineweight)
@@ -106,5 +110,7 @@ class SectionViewRenderer:
             scene = SectionLabelRenderer._render_projected(scene, data, style, labels, plot)
         if render_grade_breaks:
             scene = SectionViewGradeBreakRenderer._render_projected(scene, data, plot)
+        if projections:
+            scene = SectionProjectionRenderer._render_projected(scene, projections, plot, height, data.station)
         scene = replace(scene, metadata={**scene.metadata, "section_station": data.station})
         return StaggeredRenderer.apply_stagger(scene, stagger_config) if stagger_config is not None else scene

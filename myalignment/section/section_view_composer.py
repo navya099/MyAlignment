@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
 import math
 from typing import TYPE_CHECKING
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
     from myalignment.corridor.corridor import Corridor
     from myalignment.profile.profile import Profile
     from myalignment.section.label_set import SectionLabelSet
+    from myalignment.section.section_projection import SectionProjection
     from myalignment.section.section_view_style import SectionViewStyle
     from myalignment.surface.tin_surface import TinSurface
 
@@ -27,6 +29,7 @@ class SectionViewComposer:
         style: SectionViewStyle | None = None, *, profile: Profile | None = None,
         label_set: SectionLabelSet | None = None,
         offset_elevation: float = 0.0,
+        projections: Sequence[SectionProjection] = (),
     ) -> Scene:
         data = SectionViewBuilder.build_data(
             corridor, alignment, station, profile=profile, offset_elevation=offset_elevation,
@@ -34,6 +37,7 @@ class SectionViewComposer:
         points, links = _surface_section(surface, alignment, station, min(-20, data.min_offset), max(20, data.max_offset))
         return SectionViewRenderer.render(
             Scene(), replace(data, surface_points=points, surface_links=links), style, label_set,
+            projections=projections,
         )
 
 
