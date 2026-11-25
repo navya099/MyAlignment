@@ -21,29 +21,31 @@ class VerticalGeometryBandRenderer:
     def render(
         cls, scene: Scene, profile: Profile, band_y_base: float,
         style: VerticalGeometryBandStyle, vertical_exaggeration: float = 10.0,
+        *, station_range: tuple[float, float] | None = None,
     ) -> Scene:
         """band_y_base는 수직 과장을 적용하기 전 밴드 상단 표고다."""
         if not profile.is_valid:
             return scene
         viewport = Viewport(ViewportType.PROFILE, vertical_exaggeration)
+        start, end = station_range or (profile.start_station, profile.end_station)
         top, bottom = band_y_base, band_y_base - style.band_height
         frame = Style(color=8, layer=style.layer, lineweight=0.2)
         primitives = [
-            Primitive.line(viewport.project(profile.start_station, y), viewport.project(profile.end_station, y), frame)
+            Primitive.line(viewport.project(start, y), viewport.project(end, y), frame)
             for y in (top, bottom)
         ]
         points = (
             point for point in VerticalGeometryExtractor.extract(profile)
-            if point.label_text in style.visible_types
+            if point.label_text in style.visible_types and start <= point.station <= end
         )
         text_y = (top + bottom) / 2 + style.text_offset_y
         height = style.text_height * vertical_exaggeration
         for station, group in groupby(points, key=lambda point: point.station):
             marks = tuple(group)
             tick_style = Style(color=style.color_for_type(marks[0].point_type), layer=style.layer, lineweight=0.3)
-            for start, end in ((top, top + style.tick_length), (bottom, bottom - style.tick_length), (top, bottom)):
+            for tick_start, tick_end in ((top, top + style.tick_length), (bottom, bottom - style.tick_length), (top, bottom)):
                 primitives.append(Primitive.line(
-                    viewport.project(station, start), viewport.project(station, end), tick_style,
+                    viewport.project(station, tick_start), viewport.project(station, tick_end), tick_style,
                 ))
             for index, point in enumerate(marks):
                 text_style = Style(color=style.color_for_type(point.point_type), layer=style.layer)

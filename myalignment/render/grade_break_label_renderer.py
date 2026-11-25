@@ -46,6 +46,7 @@ class GradeBreakLabelRenderer:
     def render(
         cls, scene: Scene, profile: Profile, style: GradeBreakLabelStyle | None = None,
         vertical_exaggeration: float = 10.0,
+        *, station_range: tuple[float, float] | None = None,
     ) -> Scene:
         style = style or GradeBreakLabelStyle.standard()
         viewport = Viewport(ViewportType.PROFILE, vertical_exaggeration)
@@ -53,6 +54,8 @@ class GradeBreakLabelRenderer:
         kind = VerticalGeometryPointType
         primitives = []
         for point in points:
+            if station_range is not None and not station_range[0] <= point.station <= station_range[1]:
+                continue
             if point.point_type is not kind.GRADE_BREAK and not (
                 point.curve_length and point.point_type in (kind.PVI, kind.VPC, kind.VPT)
             ):

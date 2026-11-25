@@ -99,3 +99,35 @@ DxfWriter(scene).write("profile-depth.dxf")
 `DepthLabelStyle.standard()`는 측점·표고차·구배·거리를 표시합니다. `minimal()`은 표고차, `slope_only()`는 구배를 표시하며, `show_arrow=False`로 연결선과 끝점 마커를 숨길 수 있습니다. 사용자 정의 `ProfileLabelComponent`의 텍스트에는 `<[Start Station]>`, `<[End Station]>`, `<[Start Elevation]>`, `<[End Elevation]>`, `<[Elevation Difference]>`, `<[Grade]>`, `<[Distance]>` 필드를 사용할 수 있습니다.
 
 기존 Scene에 레이블만 추가하려면 `myalignment.render.depth_label_renderer.DepthLabelRenderer`의 `render()` 또는 `render_multiple()`을 사용합니다. 생성된 API 레퍼런스에서 두 클래스와 렌더러의 시그니처를 찾을 수 있습니다.
+
+## 종단 뷰 분할
+
+`ProfileViewSplitComposer.compose()`는 측점 범위를 여러 패널로 나눠 하나의 DXF 장면으로 구성합니다. 여러 종단을 전달하면 전체 측점 범위를 포함하며, PVI 분할과 자동 경계 정렬에는 입력 순서의 첫 유효 종단을 사용합니다.
+
+```python
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.profile import ProfileBuilder, ProfileViewSplitConfig, ProfileViewSplitMethod
+from myalignment.profile.view_band import BandType, ProfileViewBand
+from myalignment.profile.view_style import ProfileViewStyle
+from myalignment.render.profile_view_split_composer import ProfileViewSplitComposer
+
+profile = ProfileBuilder("FG").add_tangent(1000, 1600, 100, 112).build()
+config = ProfileViewSplitConfig(
+    method=ProfileViewSplitMethod.STATION_RANGE,
+    max_station_per_view=240,
+    overlap_station=10,
+    columns=2,
+)
+scene = ProfileViewSplitComposer.compose(
+    [profile], "Main", ProfileViewStyle(vertical_exaggeration=3), config,
+    bands=[ProfileViewBand(BandType.PROFILE_DATA)],
+)
+assert scene.metadata["view_count"] == 3
+DxfWriter(scene).write("profile-split.dxf")
+```
+
+- `STATION_RANGE`는 겹침을 더하기 전의 최대 측점 길이를 기준으로 자동 분할합니다. 범위 제약이 허용하면 경계를 PVI에 맞춥니다.
+- `PVI_COUNT`는 실제 내부 PVI 개수를 사용합니다. 경계에 놓인 PVI는 분할을 계산할 때 앞 구간에 한 번만 셉니다.
+- `MANUAL`은 오름차순 원시 측점 목록을 사용합니다. 전체 범위 밖의 측점은 건너뜁니다. `NONE`은 한 패널로 표시합니다.
+
+`overlap_station`은 내부 경계의 양쪽 패널을 각각 지정 거리만큼 확장합니다. 측점 레이블은 해당 측점이 있는 패널에 나타나며, Depth 레이블은 두 끝점이 모두 패널에 포함될 때 표시됩니다. `include_start_label=False`는 패널 제목 아래의 측점 범위 표기를 숨깁니다. 패널별 표시 범위와 도면 이동량은 `scene.metadata["panels"]`에서 조회할 수 있습니다.

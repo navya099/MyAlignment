@@ -18,7 +18,7 @@ from myalignment.render.grade_break_label_renderer import GradeBreakLabelRendere
 from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRenderer
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.profile_label_renderer import ProfileLabelRenderer
-from myalignment.render.profile_renderer import ProfileRenderer
+from myalignment.render.profile_renderer import ProfileRenderer, _entity_ranges
 from myalignment.render.scene import Layer, Scene
 from myalignment.render.stagger_config import StaggerConfig
 from myalignment.render.stagger_presets import StaggerConfigPresets
@@ -49,6 +49,17 @@ def _grid_ticks(start: float, end: float, major: float, minor: float):
         yield value, 8
 
 
+def _elevations(profile: Profile, station_range: tuple[float, float]):
+    for entity, start, end in _entity_ranges(profile, station_range):
+        yield entity.elevation_at(start)
+        yield entity.elevation_at(end)
+        extremum = getattr(entity, "extremum_station", None)
+        if callable(extremum):
+            station = extremum()
+            if station is not None and start < station < end:
+                yield entity.elevation_at(station)
+
+
 class ProfileViewRenderer:
     """종단선, 그리드, 데이터 밴드를 하나의 Scene에 렌더링한다."""
 
@@ -76,21 +87,30 @@ class ProfileViewRenderer:
         grade_break_style: GradeBreakLabelStyle | None = None,
         render_grade_breaks: bool = True,
         stagger_config: StaggerConfig | None = None,
+        station_range: tuple[float, float] | None = None,
     ) -> Scene:
         """종단 뷰를 렌더링하고 지정한 레이블을 배치한다.
 
         수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다.
         depth_labels에는 두 원시 측점 사이를 측정하는 레이블을 전달한다.
+        station_range를 지정하면 해당 원시 측점 구간만 그린다.
         """
         scene = Scene() if scene is None else scene
         valid_profiles = tuple(profile for profile in profiles if profile.is_valid)
         if not valid_profiles:
             return scene
 
-        start = min(profile.start_station for profile in valid_profiles)
-        end = max(profile.end_station for profile in valid_profiles)
-        low = min(profile.min_elevation for profile in valid_profiles) - 5.0
-        high = max(profile.max_elevation for profile in valid_profiles) + 5.0
+        window_elevations = []
+        if station_range is None:
+            start = min(profile.start_station for profile in valid_profiles)
+            end = max(profile.end_station for profile in valid_profiles)
+        else:
+            start, end = station_range
+            if not math.isfinite(start) or not math.isfinite(end) or start >= end:
+                raise ValueError("station_range must be finite and increasing")
+            window_elevations = [z for profile in valid_profiles for z in _elevations(profile, station_range)]
+        low = (min(window_elevations) if window_elevations else min(p.min_elevation for p in valid_profiles)) - 5
+        high = (max(window_elevations) if window_elevations else max(p.max_elevation for p in valid_profiles)) + 5
         viewport = Viewport(ViewportType.PROFILE, style.vertical_exaggeration)
 
         grid = []
@@ -108,11 +128,19 @@ class ProfileViewRenderer:
                 viewport.project(start, elevation), viewport.project(end, elevation),
                 Style(color=color, layer=cls.GRID_LAYER),
             ))
+        if station_range is not None:
+            frame = Style(color=8, layer=cls.GRID_LAYER)
+            grid.append(Primitive.polyline(
+                (viewport.project(x, y) for x, y in ((start, low), (end, low), (end, high), (start, high))),
+                closed=True, style=frame,
+            ))
         scene = scene.add_layer(Layer(cls.GRID_LAYER, color=8)).add_all(grid)
 
         custom_grade_breaks = render_grade_breaks and grade_break_style is not None
         for profile in valid_profiles:
-            scene = ProfileRenderer.render(profile, scene, vertical_exaggeration=style.vertical_exaggeration)
+            scene = ProfileRenderer.render(
+                profile, scene, vertical_exaggeration=style.vertical_exaggeration, station_range=station_range,
+            )
             if render_labels:
                 generic = profile
                 if custom_grade_breaks:
@@ -120,9 +148,13 @@ class ProfileViewRenderer:
                         profile.label_set.without_style(ProfileLabelType.GRADIENT_BREAK)
                         .without_style(ProfileLabelType.PVI)
                     )
-                scene = ProfileLabelRenderer.render(scene, generic, style.vertical_exaggeration)
+                scene = ProfileLabelRenderer.render(
+                    scene, generic, style.vertical_exaggeration, station_range=station_range,
+                )
             if custom_grade_breaks:
-                scene = GradeBreakLabelRenderer.render(scene, profile, grade_break_style, style.vertical_exaggeration)
+                scene = GradeBreakLabelRenderer.render(
+                    scene, profile, grade_break_style, style.vertical_exaggeration, station_range=station_range,
+                )
 
         if bands:
             geometry_style = geometry_band_style or GeometryBandStyle()
@@ -151,6 +183,7 @@ class ProfileViewRenderer:
                     outer_edge = base + direction * vertical_style.band_height
                     scene = VerticalGeometryBandRenderer.render(
                         scene, profile, max(base, outer_edge), vertical_style, style.vertical_exaggeration,
+                        station_range=station_range,
                     )
                     edges[location] = outer_edge + direction * (2 * vertical_style.tick_length + 1.0)
                     continue
@@ -175,9 +208,14 @@ class ProfileViewRenderer:
                 ))
 
         for label in labels or ():
-            scene = StationLabelRenderer.render(scene, label, valid_profiles, style.vertical_exaggeration)
+            if station_range is None or start <= label.station <= end:
+                scene = StationLabelRenderer.render(scene, label, valid_profiles, style.vertical_exaggeration)
         if depth_labels:
-            scene = DepthLabelRenderer.render_multiple(scene, depth_labels, profiles, style.vertical_exaggeration)
+            selected_depth = tuple(
+                label for label in depth_labels
+                if station_range is None or start <= label.start_station < label.end_station <= end
+            )
+            scene = DepthLabelRenderer.render_multiple(scene, selected_depth, profiles, style.vertical_exaggeration)
 
         scene = replace(scene, metadata={
             **scene.metadata,
@@ -185,6 +223,7 @@ class ProfileViewRenderer:
             "vertical_exaggeration": style.vertical_exaggeration,
             "start_station": start,
             "end_station": end,
+            **({"elevation_range": (low, high)} if station_range is not None else {}),
         })
         if stagger_config is None and custom_grade_breaks:
             stagger_config = StaggerConfigPresets.up_increment(base=3.0, increment=2.0)

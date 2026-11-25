@@ -57,11 +57,16 @@ class ProfileLabelRenderer:
     """종단 기하를 분석해 선택한 유형의 레이블을 Scene에 추가한다."""
 
     @classmethod
-    def render(cls, scene: Scene, profile: Profile, vertical_exaggeration: float = 10.0) -> Scene:
+    def render(
+        cls, scene: Scene, profile: Profile, vertical_exaggeration: float = 10.0,
+        *, station_range: tuple[float, float] | None = None,
+    ) -> Scene:
         viewport = Viewport(ViewportType.PROFILE, vertical_exaggeration)
         last_station = {}
         primitives = []
         for kind, station, elevation, fields in sorted(_anchors(profile), key=lambda item: item[1]):
+            if station_range is not None and not station_range[0] <= station <= station_range[1]:
+                continue
             style = profile.label_set.get_style(kind)
             if style is None or station - last_station.get(kind, -math.inf) < style.min_spacing:
                 continue
