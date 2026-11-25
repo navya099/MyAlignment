@@ -2,6 +2,8 @@
 
 from typing import TYPE_CHECKING
 
+from .curve_label_style import CurveLabelStyle
+from .spiral_label_style import SpiralLabelStyle
 from .table_column import AlignmentTableColumn, TableColumnSpec
 from .table_style import AlignmentTableStyle
 from .table_type import AlignmentTableType
@@ -12,7 +14,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Alignment", "AlignmentBuilder", "AlignmentTableColumn", "AlignmentTableStyle",
-    "AlignmentTableType", "TableColumnSpec",
+    "AlignmentTableType", "CurveLabelStyle", "SpiralLabelStyle", "TableColumnSpec",
 ]
 
 

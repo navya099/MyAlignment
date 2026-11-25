@@ -39,6 +39,8 @@ class AlignmentRenderer:
         profile: Profile | None = None, reference_alignment: Alignment | None = None,
         render_equations: bool = True,
         stagger_config: StaggerConfig | None = None,
+        render_curves: bool = True,
+        render_spirals: bool = True,
     ) -> Scene:
         if not math.isfinite(sample_step) or sample_step <= 0:
             raise ValueError("sample_step must be finite and positive")
@@ -88,6 +90,7 @@ class AlignmentRenderer:
             scene = AlignmentLabelRenderer.render(
                 scene, alignment, surface, profile=profile, reference_alignment=reference_alignment,
                 render_equations=render_equations,
+                render_curves=render_curves, render_spirals=render_spirals,
             )
         scene = replace(scene, metadata={
             **scene.metadata,

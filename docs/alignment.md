@@ -93,3 +93,34 @@ DxfWriter(scene).write("alignment-table.dxf")
 `line_style()`, `curve_style()`, `spiral_style()`로 요소 유형을 선택할 수 있습니다. `TableColumnSpec`으로 제목, 폭, 숫자 형식을 지정합니다. 폭을 0으로 두면 내용에 맞게 계산합니다. `sort_by`는 표에 표시하지 않는 열에도 적용할 수 있습니다. `split_table=True`를 쓰면 `max_rows_per_table`씩 나눠 제목과 머리글이 있는 표를 오른쪽에 배치합니다.
 
 적용할 수 없는 제원은 빈 셀로 둡니다. 완화곡선의 반경에는 원곡선 쪽 끝의 반경을 표시하고, A 값은 클로소이드 모델의 설계 파라미터에서 계산합니다.
+
+## 원곡선·완화곡선 레이블
+
+기본 레이블 세트는 원곡선과 완화곡선의 중앙에 제원을 표시합니다. `CurveLabelStyle.detailed()`는 외선장, 중앙종거, 현장과 양 끝 측점을 추가합니다. `SpiralLabelStyle.stations()`는 인접 요소에 따라 TS·SC·CS·ST 측점을 표시합니다. 개별 BC·EC 좌표 레이블은 `AlignmentLabelStyle.curve_point_style()`로 추가합니다.
+
+```python
+from myalignment.alignment import AlignmentBuilder, CurveLabelStyle, SpiralLabelStyle
+from myalignment.alignment.label_set import AlignmentLabelSet
+from myalignment.alignment.label_style import AlignmentLabelStyle
+from myalignment.alignment.label_type import AlignmentLabelType
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.render.alignment_renderer import AlignmentRenderer
+
+axis = (
+    AlignmentBuilder("Main").with_pi_coords([(0, 0), (150, 0), (150, 180)])
+    .with_radii([None, 40, None]).with_spiral_lengths([0, 12, 0], [0, 16, 0]).build()
+)
+labels = (
+    AlignmentLabelSet.standard()
+    .with_style(AlignmentLabelType.CURVE, CurveLabelStyle.detailed())
+    .with_style(AlignmentLabelType.SPIRAL, SpiralLabelStyle.stations())
+    .with_style(AlignmentLabelType.CURVE_POINT, AlignmentLabelStyle.curve_point_style())
+)
+scene = AlignmentRenderer.render_plan(axis.with_label_set(labels), render_labels=True)
+assert any(primitive.style.layer == "C-ALIGN-CURVE-LABEL" for primitive in scene.primitives)
+DxfWriter(scene).write("curve-spiral-labels.dxf")
+```
+
+`angle_format`은 `dms` 또는 `decimal`을 사용합니다. 레이블의 측점에는 측점 방정식이 적용됩니다. `CurveSpiralExtractor`는 원시 측점과 라디안 각도, 완화곡선 시작 접선 좌표계의 끝점 `x`, `y`를 반환합니다. A 값은 클로소이드에 해당하며, 적용할 수 없는 제원이나 전이 측점은 대시로 표시됩니다.
+
+`render_curves=False`와 `render_spirals=False`로 해당 유형의 중앙 제원 레이블을 숨길 수 있습니다. 겹침 방지는 `stagger_config=`로 설정합니다. 기존 장면에 한 유형만 추가하려면 `CurveLabelRenderer.render()` 또는 `SpiralLabelRenderer.render()`를 사용합니다.

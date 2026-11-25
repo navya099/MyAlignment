@@ -6,12 +6,12 @@ from typing import TYPE_CHECKING
 
 from cadgeom import Point2d
 
+from myalignment.alignment.curve_spiral_extractor import _curve_parameters, _spiral_parameters
 from myalignment.alignment.table_column import AlignmentTableColumn as Column
 from myalignment.alignment.table_type import AlignmentTableType
 from myalignment.enitity.arc_entity import ArcEntity
 from myalignment.enitity.line_entity import LineEntity
 from myalignment.enitity.spiral_entity import SpiralEntity
-from myalignment.enum.spiraltype import SpiralType
 from myalignment.render.label_box import LabelBox
 from myalignment.render.primitives import Primitive, Style
 from myalignment.render.scene import Layer, Scene
@@ -37,25 +37,23 @@ def _values(entity: AlignmentEntity, kind: AlignmentTableType) -> dict[Column, f
         Column.LENGTH: entity.length,
         Column.BEARING: math.degrees(entity.start_azimuth) % 360,
     }
-    geometry = entity.geometry
     if isinstance(entity, ArcEntity):
-        radius, delta = geometry.radius, geometry.delta
-        half = delta / 2
-        middle = 2 * radius * math.sin(half / 2) ** 2
+        values = _curve_parameters(entity)
         row.update({
-            Column.RADIUS: radius, Column.DELTA: math.degrees(delta), Column.MID_ORDINATE: middle,
+            Column.RADIUS: values["radius"], Column.DELTA: math.degrees(values["delta"]),
+            Column.MID_ORDINATE: values["mid_ordinate"],
         })
-        if delta < math.pi:
-            row[Column.TANGENT] = radius * math.tan(half)
-            row[Column.EXTERNAL] = middle / math.cos(half)
+        if values["tangent"] is not None:
+            row[Column.TANGENT] = values["tangent"]
+            row[Column.EXTERNAL] = values["external"]
     elif isinstance(entity, SpiralEntity):
+        values = _spiral_parameters(entity)
         row.update({
-            Column.RADIUS: geometry.radius,
-            Column.DELTA: math.degrees(abs(entity.end_azimuth - entity.start_azimuth)),
-            Column.SPIRAL_TYPE: geometry.spiral_type.name,
+            Column.RADIUS: values["radius"], Column.DELTA: math.degrees(values["theta"]),
+            Column.SPIRAL_TYPE: values["spiral_type"],
         })
-        if geometry.spiral_type in (SpiralType.Clothoid, SpiralType.OffsetClothoid):
-            row[Column.A_VALUE] = math.sqrt(geometry.params.length) * math.sqrt(geometry.params.radius)
+        if values["a_value"] is not None:
+            row[Column.A_VALUE] = values["a_value"]
     return row
 
 

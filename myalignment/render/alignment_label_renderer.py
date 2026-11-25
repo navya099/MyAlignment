@@ -6,8 +6,11 @@ from typing import TYPE_CHECKING
 
 from cadgeom import Point2d
 
+from myalignment.alignment.curve_label_style import CurveLabelStyle
+from myalignment.alignment.curve_spiral_extractor import CurveSpiralExtractor
 from myalignment.alignment.label_component import AlignmentLabelComponentType, ReferenceObjectType
 from myalignment.alignment.label_type import AlignmentLabelType
+from myalignment.alignment.spiral_label_style import SpiralLabelStyle
 from myalignment.alignment.station_equation_type import StationEquationType
 from myalignment.enum.alignmententitytype import AlignmentEntityType
 from myalignment.profile.geometry_extractor import GeometryPointExtractor
@@ -37,7 +40,56 @@ def _stations(alignment, interval):
     )
 
 
-def _anchors(alignment, major_interval, minor_interval):
+def _geometry_fields(alignment, info, style, label_type):
+    specialized = isinstance(style, (CurveLabelStyle, SpiralLabelStyle))
+
+    def number(key):
+        value = info[key]
+        precision = 3 if specialized else 2
+        return f"{value:.{precision}f}" if value is not None else "—"
+
+    def station(key):
+        value = info[key]
+        return f"{alignment.raw_to_display_station(value):.2f}" if value is not None else "—"
+
+    key = "delta" if label_type is AlignmentLabelType.CURVE else "theta"
+    angle = (CurveSpiralExtractor.format_angle(info[key], style.angle_format) if specialized
+             else f"{math.degrees(info[key]):.2f}°")
+    fields = {"Radius": number("radius"), "Length": number("length"), "Delta": angle}
+    if label_type is AlignmentLabelType.CURVE:
+        fields.update({
+            "Tangent": number("tangent"), "External": number("external"),
+            "Mid-ordinate": number("mid_ordinate"), "Mid Ordinate": number("mid_ordinate"),
+            "Chord": number("chord"), "BC Station": station("start_station"), "EC Station": station("end_station"),
+            "BC Easting": f"{info['bc_point'].x:.3f}", "BC Northing": f"{info['bc_point'].y:.3f}",
+            "EC Easting": f"{info['ec_point'].x:.3f}", "EC Northing": f"{info['ec_point'].y:.3f}",
+        })
+        if not specialized and info["tangent"] is None:
+            fields["Tangent"] = "???"
+    else:
+        fields.update({
+            "Theta": angle, "A Value": number("a_value"), "Spiral Type": info["spiral_type"],
+            "X": number("x"), "Y": number("y"),
+            **{f"{code.upper()} Station": station(f"{code}_station") for code in ("ts", "sc", "cs", "st")},
+        })
+    return fields
+
+
+def _hidden_fields(style):
+    options = {
+        "Radius": "show_radius", "Delta": "show_delta", "Length": "show_length",
+        "Distance": "show_length", "Tangent": "show_tangent", "External": "show_external",
+        "Mid-ordinate": "show_mid_ordinate", "Mid Ordinate": "show_mid_ordinate",
+        "Chord": "show_chord", "BC Station": "show_bc_station", "EC Station": "show_ec_station",
+        "A Value": "show_a_value", "Theta": "show_theta",
+        **{f"{code.upper()} Station": f"show_{code}_station" for code in ("ts", "sc", "cs", "st")},
+    }
+    if isinstance(style, SpiralLabelStyle):
+        options["Delta"] = "show_theta"
+    return frozenset(field for field, flag in options.items() if not getattr(style, flag, True))
+
+
+def _anchors(alignment, major_interval, minor_interval, render_curves, render_spirals):
     kind = AlignmentLabelType
     for label_type, interval in ((kind.MINOR_STATION, minor_interval), (kind.MAJOR_STATION, major_interval)):
         if alignment.label_set.get_style(label_type) is None:
@@ -65,23 +117,37 @@ def _anchors(alignment, major_interval, minor_interval):
                 "Radius": f"{point.radius:.2f}" if point.radius > 0 else "???",
             }
 
+    show_points = alignment.label_set.get_style(kind.CURVE_POINT) is not None
+    curve_style = alignment.label_set.curve_style if render_curves else None
+    spiral_style = alignment.label_set.spiral_style if render_spirals else None
+    curves = (
+        {id(item["entity"]): item for item in CurveSpiralExtractor.extract_curves(alignment)}
+        if curve_style is not None or show_points else {}
+    )
+    spirals = (
+        {id(item["entity"]): item for item in CurveSpiralExtractor.extract_spirals(alignment)}
+        if spiral_style is not None else {}
+    )
+    if show_points:
+        for info in curves.values():
+            yield kind.CURVE_POINT, info["start_station"], {"Geometry Point Text": "BC"}
+            yield kind.CURVE_POINT, info["end_station"], {"Geometry Point Text": "EC"}
+
     for entity in entities:
         label_type = _SEGMENT_TYPES.get(entity.entity_type)
-        if label_type is None or alignment.label_set.get_style(label_type) is None:
+        style = alignment.label_set.get_style(label_type) if label_type is not None else None
+        if style is None:
             continue
         station = (entity.start_station + entity.end_station) / 2
         fields = {"Distance": f"{entity.length:.2f}", "Length": f"{entity.length:.2f}"}
         if label_type is kind.CURVE:
-            radius, delta = entity.geometry.radius, abs(entity.geometry.delta)
-            fields.update({
-                "Radius": f"{radius:.2f}", "Delta": f"{math.degrees(delta):.2f}°",
-                "Tangent": f"{radius * math.tan(delta / 2):.2f}" if delta < math.pi else "???",
-            })
+            if not render_curves or id(entity) not in curves:
+                continue
+            fields.update(_geometry_fields(alignment, curves[id(entity)], style, label_type))
         elif label_type is kind.SPIRAL:
-            fields.update({
-                "Radius": f"{entity.geometry.radius:.2f}",
-                "Delta": f"{abs(math.degrees(entity.end_azimuth - entity.start_azimuth)):.2f}°",
-            })
+            if not render_spirals or id(entity) not in spirals:
+                continue
+            fields.update(_geometry_fields(alignment, spirals[id(entity)], style, label_type))
         yield label_type, station, fields
 
 
@@ -106,7 +172,7 @@ def _reference_values(reference_type, target, station, point):
     return {}
 
 
-def _component_primitives(component, point, azimuth, values):
+def _component_primitives(component, point, azimuth, values, hidden_fields=frozenset()):
     origin = Point2d(point.x + component.offset_x, point.y + component.offset_y)
     style = Style(color=component.text_color, layer=component.layer)
     kind = component.component_type
@@ -115,7 +181,13 @@ def _component_primitives(component, point, azimuth, values):
             key = match[1].split("(", 1)[0]
             return values.get(key, "???")
 
-        text = _FIELD.sub(evaluate, component.contents)
+        contents = component.contents
+        if hidden_fields:
+            contents = "\n".join(
+                line for line in contents.replace("\\P", "\n").splitlines()
+                if not any(field.split("(", 1)[0] in hidden_fields for field in _FIELD.findall(line))
+            )
+        text = _FIELD.sub(evaluate, contents)
         for row, line in enumerate(text.replace("\\P", "\n").splitlines()):
             if line:
                 yield Primitive.text(
@@ -182,6 +254,7 @@ class AlignmentLabelRenderer:
         profile: Profile | None = None, reference_alignment: Alignment | None = None,
         major_interval: float | None = None, minor_interval: float | None = None,
         render_equations: bool = True,
+        render_curves: bool = True, render_spirals: bool = True,
     ) -> Scene:
         """종단은 현재 STA, 참조 선형은 현재 XY의 투영점으로 조회한다."""
         major_interval = cls.MAJOR_INTERVAL if major_interval is None else major_interval
@@ -199,7 +272,9 @@ class AlignmentLabelRenderer:
         }
         primitives = []
         layers = {}
-        for label_type, station, fields in _anchors(alignment, major_interval, minor_interval):
+        for label_type, station, fields in _anchors(
+            alignment, major_interval, minor_interval, render_curves, render_spirals,
+        ):
             point = alignment.point_at(station)
             azimuth = alignment.tangent_at(station)
             fields.update({
@@ -209,6 +284,7 @@ class AlignmentLabelRenderer:
                 "Bearing": f"{math.degrees(azimuth) % 360:.2f}°",
             })
             style = alignment.label_set.get_style(label_type)
+            hidden = _hidden_fields(style) if isinstance(style, (CurveLabelStyle, SpiralLabelStyle)) else frozenset()
             cached_references = {}
             for component in style.components:
                 if not component.visible:
@@ -222,7 +298,7 @@ class AlignmentLabelRenderer:
                             reference, references[reference], station, point,
                         )
                     values = {**fields, **cached_references[reference]}
-                primitives.extend(_component_primitives(component, point, azimuth, values))
+                primitives.extend(_component_primitives(component, point, azimuth, values, hidden))
 
         equation_style = alignment.label_set.equation_style
         if render_equations and equation_style is not None:

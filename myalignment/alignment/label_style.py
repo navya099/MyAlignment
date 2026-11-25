@@ -8,6 +8,15 @@ from myalignment.alignment.label_component import (
 from myalignment.alignment.label_type import AlignmentLabelType
 
 
+def _text_rows(rows: tuple[str, ...], layer: str, color: int) -> tuple[AlignmentLabelComponent, ...]:
+    return tuple(
+        AlignmentLabelComponent(
+            contents=text, text_height=1.5, offset_y=2 * (len(rows) - index), layer=layer, text_color=color,
+        )
+        for index, text in enumerate(rows)
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class AlignmentLabelStyle:
     """평면선형 유형별 레이블 스타일."""
@@ -82,4 +91,14 @@ class AlignmentLabelStyle:
         return cls("Spiral", AlignmentLabelType.SPIRAL, components=(
             AlignmentLabelComponent(contents="L: <[Distance]>", text_height=1.5),
             AlignmentLabelComponent(contents="R: <[Radius]>", text_height=1.5, offset_y=0.5),
+        ))
+
+    @classmethod
+    def curve_point_style(cls) -> AlignmentLabelStyle:
+        """원곡선 양 끝의 측점과 좌표를 표시한다."""
+        return cls("Curve Point", AlignmentLabelType.CURVE_POINT, components=(
+            AlignmentLabelComponent(
+                contents="<[Geometry Point Text]> STA <[Station Value]>\nN: <[Northing]> E: <[Easting]>",
+                text_height=1.5, offset_y=3.0, layer="C-ALIGN-CURVE-POINT",
+            ),
         ))

@@ -4,9 +4,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
+from myalignment.alignment.curve_label_style import CurveLabelStyle
 from myalignment.alignment.equation_label_style import StationEquationLabelStyle
 from myalignment.alignment.label_style import AlignmentLabelStyle
 from myalignment.alignment.label_type import AlignmentLabelType
+from myalignment.alignment.spiral_label_style import SpiralLabelStyle
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +35,14 @@ class AlignmentLabelSet:
     def with_equation_style(self, style: StationEquationLabelStyle | None) -> AlignmentLabelSet:
         return replace(self, equation_style=style)
 
+    @property
+    def curve_style(self) -> AlignmentLabelStyle | None:
+        return self.get_style(AlignmentLabelType.CURVE)
+
+    @property
+    def spiral_style(self) -> AlignmentLabelStyle | None:
+        return self.get_style(AlignmentLabelType.SPIRAL)
+
     @classmethod
     def standard(cls) -> AlignmentLabelSet:
         styles = (
@@ -40,6 +50,8 @@ class AlignmentLabelSet:
             AlignmentLabelStyle.minor_station_style(),
             AlignmentLabelStyle.geometry_point_style(),
             AlignmentLabelStyle.line_style(),
+            CurveLabelStyle.standard(),
+            SpiralLabelStyle.standard(),
         )
         return cls(
             styles={style.label_type: style for style in styles},
