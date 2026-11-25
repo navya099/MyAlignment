@@ -244,3 +244,36 @@ DxfWriter(section).write("slope-section.dxf")
 - 간격과 크기의 단위는 미터입니다. 표본 측점은 영역 간격을 따르며 격자는 `spacing_horizontal`을 사용합니다. `sample_frequency`를 전달하면 표본 측점 간격을 직접 지정할 수 있습니다. 해치와 격자의 종방향 선은 같은 영역 안에서 연결됩니다.
 - 계단 높이와 폭은 각각 단의 최대 높이와 폭입니다. 소단의 높이 간격은 `berm_interval`입니다. 말뚝 간격은 사면을 따라 측정하고 말뚝은 수직으로 세웁니다. 구배는 선형에 가까운 쪽에서 바깥쪽으로 계산합니다.
 - 기준선의 종단이 선형에 등록되지 않은 경우 `profiles`에 종단 이름으로 전달합니다. 여러 기준선이나 인접 영역이 횡단 측점을 공유할 경우 `at_station()`의 `baseline_name`과 `region_name`으로 표시할 패턴을 선택합니다.
+
+## 코리더 영역 편집과 롤백
+
+`Corridor.edit(commands)`는 편집 명령을 순서대로 적용해 새 코리더를 반환합니다. `Corridor.transaction()`은 같은 작업을 메서드 체이닝으로 예약합니다. `with` 블록이 정상 종료되면 `tx.result`에서 결과를 얻습니다. 블록이나 명령에서 오류가 발생하면 예외가 전달되며 `tx.result`는 원본을 가리킵니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.assembly.assembly import AssemblyBuilder
+from myalignment.assembly.subassemblies.basic_lane import BasicLane
+from myalignment.corridor.corridor_builder import CorridorBuilder
+from myalignment.corridor.rehab.report import CorridorRehabReport
+
+axis = AlignmentBuilder("Main").with_pi_coords([(0, 0), (100, 0)]).build()
+lane = AssemblyBuilder().add_both(lambda side: BasicLane(side=side)).build()
+corridor = (
+    CorridorBuilder("Road").add_baseline_from_alignment(axis)
+    .add_region("Paving", 0, 100, lane).build()
+)
+
+with corridor.transaction() as tx:
+    tx.split_region("Paving", 60).update_frequency("Paving_B", 5)
+    tx.update_assembly("Paving_B", AssemblyBuilder().add_right(BasicLane(width=4)).build())
+
+edited = tx.result
+assert [region.name for region in edited.regions] == ["Paving_A", "Paving_B"]
+assert corridor.regions[0].end_station == 100
+print(CorridorRehabReport.from_history(tx.history).to_text())
+```
+
+- `CorridorEditCommand`로 범위, 샘플 간격, 어셈블리, 타깃을 바꾸거나 영역을 분할·병합·추가·삭제할 수 있습니다. 같은 이름이 여러 기준선에 있으면 `baseline_name`을 지정합니다.
+- 각 명령의 결과는 기준선의 범위 안에 있어야 합니다. 같은 기준선에서 내부 구간이 겹칠 수 없으므로 공유 경계를 이동할 때는 한쪽 범위를 먼저 줄이고 다른 쪽을 늘립니다. 단면 조회와 샘플 조회는 공유 경계에서 먼저 시작한 영역을 사용합니다.
+- 분할은 `_A`, `_B` 이름을 만들고 원래 영역의 어셈블리, 타깃, 캔트를 유지합니다. 같은 기준선에서 인접하고 캔트 및 배치 방향이 호환되는 영역을 병합하면 앞쪽 영역의 설정과 `_merged` 이름을 사용합니다.
+- 편집으로 영역이 바뀌면 등록된 TIN 표면과 피처라인을 비웁니다. 필요에 따라 `build_surface()`와 `extract_feature_lines()`로 새 영역에서 다시 계산합니다. 트랜잭션 이력의 `snapshot_before`는 되돌리기에 사용할 수 있습니다.

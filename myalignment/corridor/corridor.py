@@ -1,7 +1,7 @@
 # corridor/corridor.py
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Iterator, TYPE_CHECKING
 
 from myalignment.corridor.baseline import CorridorBaseline
@@ -13,6 +13,8 @@ from myalignment.target.reference import TargetObjectType
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
     from myalignment.corridor.feature_line_spec import CorridorFeatureLineSpec
+    from myalignment.corridor.rehab.edit_command import CorridorEditCommand
+    from myalignment.corridor.rehab.transaction import CorridorTransaction
     from myalignment.corridor.slope_pattern import SlopePatternCollection
     from myalignment.corridor.slope_pattern_style import SlopePatternStyle
     from myalignment.corridor.surface_builder import CorridorSurfaceSpec
@@ -222,6 +224,18 @@ class Corridor:
             feature_lines=CorridorFeatureLineManager(),
         )
 
+    def edit(self, commands: Iterable[CorridorEditCommand]) -> Corridor:
+        """영역 편집 명령을 순서대로 적용한 새 코리더를 반환한다."""
+        from myalignment.corridor.rehab.editor import CorridorEditor
+
+        return CorridorEditor.execute_batch(self, commands)
+
+    def transaction(self) -> CorridorTransaction:
+        """영역 편집 명령을 모아 한 번에 적용한다."""
+        from myalignment.corridor.rehab.transaction import CorridorTransaction
+
+        return CorridorTransaction(self)
+
     def extract_feature_lines(
         self, specs: Sequence[CorridorFeatureLineSpec] | None = None, standard: str = "road", *,
         alignments: Mapping[str, Alignment], profiles: Mapping[str, Profile] | None = None,
@@ -303,13 +317,15 @@ class Corridor:
     def sample_cross_sections(
         self, *, alignment_name: str | None = None, baseline_name: str | None = None,
     ) -> dict[float, tuple[tuple, tuple]]:
-        """선택 영역의 횡단면 샘플."""
+        """선택 영역에서 샘플링하며 공유 경계에서는 먼저 시작한 영역을 사용한다."""
         result = {}
         owners = {}
         for region, baseline in self._regions_with_baselines(None, alignment_name, baseline_name):
             for sta in region.sample_stations():
-                if sta in owners and owners[sta] != baseline:
-                    raise ValueError(f"STA {sta}: 여러 기준선이 겹칩니다. baseline_name을 지정하세요.")
+                if sta in owners:
+                    if owners[sta] != baseline:
+                        raise ValueError(f"STA {sta}: 여러 기준선이 겹칩니다. baseline_name을 지정하세요.")
+                    continue
                 owners[sta] = baseline
                 result[sta] = region.cross_section_at(sta)
         return result
