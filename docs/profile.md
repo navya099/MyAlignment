@@ -67,3 +67,35 @@ DxfWriter(scene).write("profile.dxf")
 ```
 
 `ProfileViewBand`는 종단 데이터, 수평·수직 지오메트리, 캔트 밴드를 지원합니다. 수평 지오메트리와 캔트 밴드에는 `alignment=`를 전달합니다. `StationElevationLabel`의 `LabelStyle`은 지정 측점의 두 종단 표고에 사용합니다. `ProfileLabelStyle`과 `ProfileLabelSet`은 종단 요소의 구배 변경점, PVI, 종곡선 레이블을 설정합니다. 구배 변경점을 별도로 강조할 때는 위 예제의 `GradeBreakLabelStyle`을 사용합니다.
+
+## 두 측점의 표고차 레이블
+
+`DepthLabel`은 같은 종단의 두 원시 측점에서 표고를 조회합니다. 수평거리는 끝 측점에서 시작 측점을 뺀 값이고, 평균 구배는 표고차를 수평거리로 나눈 값입니다. `summary()`의 구배는 소수 비율이고 `evaluate()`의 구배는 부호를 포함한 백분율 문자열입니다. 수직 과장은 도면의 Y 좌표와 텍스트 높이에만 적용됩니다.
+
+```python
+from math import isclose
+
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.profile import DepthLabel, DepthLabelStyle, ProfileBuilder
+from myalignment.profile.view_style import ProfileViewStyle
+from myalignment.render.profile_view_renderer import ProfileViewRenderer
+
+profile = ProfileBuilder("FG").add_tangent(1000, 1100, 100, 105).build()
+depth = DepthLabel(1020, 1060, profile_name="FG")
+assert isclose(depth.summary([profile])["grade"], 0.05)
+assert depth.evaluate([profile])["Elevation Difference"] == "+2.000"
+
+scene = ProfileViewRenderer.render(
+    [profile],
+    "Main",
+    ProfileViewStyle(vertical_exaggeration=3),
+    depth_labels=[depth.with_style(DepthLabelStyle.standard())],
+)
+DxfWriter(scene).write("profile-depth.dxf")
+```
+
+종단 이름을 생략하면 입력 목록의 첫 종단을 사용합니다. 이름이 일치하는 종단이 없거나 두 점 중 하나가 종단 범위 밖에 있으면 결과는 빈 딕셔너리이고 레이블은 그리지 않습니다. 끝 측점은 시작 측점보다 커야 합니다.
+
+`DepthLabelStyle.standard()`는 측점·표고차·구배·거리를 표시합니다. `minimal()`은 표고차, `slope_only()`는 구배를 표시하며, `show_arrow=False`로 연결선과 끝점 마커를 숨길 수 있습니다. 사용자 정의 `ProfileLabelComponent`의 텍스트에는 `<[Start Station]>`, `<[End Station]>`, `<[Start Elevation]>`, `<[End Elevation]>`, `<[Elevation Difference]>`, `<[Grade]>`, `<[Distance]>` 필드를 사용할 수 있습니다.
+
+기존 Scene에 레이블만 추가하려면 `myalignment.render.depth_label_renderer.DepthLabelRenderer`의 `render()` 또는 `render_multiple()`을 사용합니다. 생성된 API 레퍼런스에서 두 클래스와 렌더러의 시그니처를 찾을 수 있습니다.

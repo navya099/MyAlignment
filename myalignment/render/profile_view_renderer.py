@@ -13,6 +13,7 @@ from myalignment.profile.view_band import BandType, ProfileViewBand
 from myalignment.profile.view_style import ProfileViewStyle
 from myalignment.rail.rail_alignment import RailAlignment
 from myalignment.render.cant_band_renderer import CantBandRenderer
+from myalignment.render.depth_label_renderer import DepthLabelRenderer
 from myalignment.render.grade_break_label_renderer import GradeBreakLabelRenderer
 from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRenderer
 from myalignment.render.primitives import Primitive, Style
@@ -28,6 +29,7 @@ from myalignment.render.viewport import Viewport, ViewportType
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
+    from myalignment.profile.depth_label import DepthLabel
     from myalignment.profile.profile import Profile
     from myalignment.profile.station_label import StationElevationLabel
 
@@ -69,12 +71,17 @@ class ProfileViewRenderer:
         vertical_geometry_band_style: VerticalGeometryBandStyle | None = None,
         cant_band_style: CantBandStyle | None = None,
         labels: Sequence[StationElevationLabel] | None = None,
+        depth_labels: Sequence[DepthLabel] | None = None,
         render_labels: bool = True,
         grade_break_style: GradeBreakLabelStyle | None = None,
         render_grade_breaks: bool = True,
         stagger_config: StaggerConfig | None = None,
     ) -> Scene:
-        """수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다."""
+        """종단 뷰를 렌더링하고 지정한 레이블을 배치한다.
+
+        수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다.
+        depth_labels에는 두 원시 측점 사이를 측정하는 레이블을 전달한다.
+        """
         scene = Scene() if scene is None else scene
         valid_profiles = tuple(profile for profile in profiles if profile.is_valid)
         if not valid_profiles:
@@ -169,6 +176,8 @@ class ProfileViewRenderer:
 
         for label in labels or ():
             scene = StationLabelRenderer.render(scene, label, valid_profiles, style.vertical_exaggeration)
+        if depth_labels:
+            scene = DepthLabelRenderer.render_multiple(scene, depth_labels, profiles, style.vertical_exaggeration)
 
         scene = replace(scene, metadata={
             **scene.metadata,

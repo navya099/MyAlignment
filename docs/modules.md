@@ -5,7 +5,7 @@
 | 패키지 | 직접 가져올 수 있는 클래스 |
 | --- | --- |
 | `myalignment.alignment` | `Alignment`, `AlignmentBuilder` |
-| `myalignment.profile` | `Profile`, `ProfileBuilder`, `ProfileType` |
+| `myalignment.profile` | `Profile`, `ProfileBuilder`, `ProfileType`, `DepthLabel`, `DepthLabelStyle` |
 | `myalignment.assembly` | `Assembly`, `AssemblyBuilder` |
 | `myalignment.corridor` | `Corridor`, `CorridorBuilder`, `RailCorridorBuilder`, `CorridorSurfaceSpec` |
 | `myalignment.surface` | `TinSurface`, `TinSurfaceBuilder` |
