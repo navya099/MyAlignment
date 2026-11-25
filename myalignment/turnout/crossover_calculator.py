@@ -38,7 +38,7 @@ def _diamond_center(first: ConnectionGeometry, second: ConnectionGeometry) -> Po
 
 
 class CrossoverGeometryCalculator:
-    """기존 크로스오버 기하에 평면도용 레일과 마커를 추가한다."""
+    """기존 크로스오버 기하에 2D와 3D에 공통으로 쓰는 레일과 마커를 추가한다."""
 
     @classmethod
     def calculate(
@@ -110,7 +110,7 @@ class CrossoverGeometryCalculator:
             if center is not None:
                 length1, length2 = first.length, second.length
         return replace(
-            base, main1_left_rail=main1_left, main1_right_rail=main1_right,
+            base, gauge=gauge, main1_left_rail=main1_left, main1_right_rail=main1_right,
             main2_left_rail=main2_left, main2_right_rail=main2_right,
             connecting_rails=rails, turnout_markers=tuple(markers),
             diamond_center=center, diamond_diagonal1=length1, diamond_diagonal2=length2,

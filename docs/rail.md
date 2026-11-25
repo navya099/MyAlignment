@@ -114,7 +114,7 @@ PS는 본선의 원시 측점입니다. 표시용 PF는 분기곡선 끝의 종�
 
 `TurnoutGeometryCalculator.calculate()`로 만든 기하를 `TurnoutRenderer.render_2d()`와 `Turnout3DRenderer.render_3d()`에 전달하면 기존 Scene에 추가하거나 마커와 침목 표시를 조정할 수 있습니다. 3D 렌더러의 `rail_elevation`은 모델 기준 표고 위 레일 높이입니다. 3D HTML을 여는 방법은 [도면과 3D 출력](rendering.md#횡단-뷰-3d-dxf와-브라우저-미리보기)을 참고하세요.
 
-## 크로스오버 2D 출력
+## 크로스오버 2D·3D 출력
 
 `Crossover2DPreview`는 평면도 Scene을 만들고 선택적으로 DXF를 저장합니다. 단일 크로스오버는 연결 경로 하나를, 이중 크로스오버는 두 경로를 사용합니다. 각 연결 경로에는 좌우 레일이 있으며, 다이아몬드 마커는 두 직선 연결부의 실제 교점을 표시합니다.
 
@@ -122,6 +122,7 @@ PS는 본선의 원시 측점입니다. 표시용 PF는 분기곡선 끝의 종�
 from math import tan
 
 from myalignment.alignment import AlignmentBuilder
+from myalignment.turnout.crossover_3d_preview import Crossover3DPreview
 from myalignment.turnout.crossover_builder import CrossoverBuilder
 from myalignment.turnout.crossover_preview import Crossover2DPreview
 from myalignment.turnout.type import TurnoutSide, TurnoutType
@@ -138,6 +139,13 @@ crossover = (
 
 scene = Crossover2DPreview.preview(a, b, crossover, dxf_path="crossover.dxf")
 assert any(layer.name == "C-CROSSOVER-DIAMOND" for layer in scene.layers)
+spatial = Crossover3DPreview.preview(
+    a, b, crossover, elevation=50,
+    dxf_path="crossover-3d.dxf", html_path="crossover-3d.html",
+)
+assert any(primitive.style.layer == "C-CROSSOVER-3D-DIAMOND" for primitive in spatial.primitives)
 ```
 
 `preview(..., scene=기존_scene)`로 여러 평면도를 합성할 수 있습니다. 궤간, 샘플 간격, 표시 범위를 직접 정하려면 `CrossoverGeometryCalculator.calculate()`의 결과를 `Crossover2DRenderer.render_2d()`에 넘깁니다. PS와 PF 레이블은 해당 본선의 원시 측점을 표시합니다.
+
+3D에서는 같은 레일 좌표를 기준 표고에 배치하고 본선과 연결 경로를 따라 침목을 그립니다. PS·PF와 다이아몬드는 수직 마커로 표시합니다. `Crossover3DRenderer.render_3d()`에서 레일 상단 높이, 침목 간격, 마커 표시를 설정할 수 있습니다. 여러 크로스오버를 합성할 때는 `Crossover3DPreview.preview(..., scene=기존_scene3d)`로 이전 결과를 전달합니다. 3D HTML을 여는 방법은 [도면과 3D 출력](rendering.md#횡단-뷰-3d-dxf와-브라우저-미리보기)을 참고하세요.

@@ -4,7 +4,8 @@ from collections.abc import Sequence
 import math
 from typing import TYPE_CHECKING
 
-from myalignment.render.primitives_3d import Point3D, Primitive3D, Style3D
+from myalignment.render._rail_3d import rail_polylines, rail_ties, rail_top, vertical_marker
+from myalignment.render.primitives_3d import Style3D
 from myalignment.render.scene_3d import Scene3D
 from myalignment.turnout.geometry import TurnoutGeometry, TurnoutGeometryCalculator
 
@@ -45,61 +46,28 @@ class Turnout3DRenderer:
         """
         if not geometry.is_valid:
             raise ValueError(geometry.error_message)
-        top = elevation + rail_elevation
-        if not math.isfinite(top) or rail_elevation < 0:
-            raise ValueError("elevation and rail_elevation must be finite; rail_elevation must be nonnegative")
+        top = rail_top(elevation, rail_elevation, tie_spacing)
         if gauge is not None and not math.isclose(gauge, geometry.gauge, rel_tol=0.0, abs_tol=1e-9):
             raise ValueError("gauge must match turnout geometry")
-        if not math.isfinite(tie_spacing) or tie_spacing <= 0:
-            raise ValueError("tie_spacing must be finite and positive")
 
         primitives = []
+        tie_style = Style3D(color=6, layer=cls.TIE_LAYER, lineweight=0.3)
         for layer, color, left, right in (
             (cls.MAIN_RAIL_LAYER, 7, geometry.main_left_rail, geometry.main_right_rail),
             (cls.BRANCH_RAIL_LAYER, 3, geometry.branch_left_rail, geometry.branch_right_rail),
         ):
             style = Style3D(color=color, layer=layer, lineweight=0.5)
-            for rail in (left, right):
-                if len(rail) >= 2:
-                    primitives.append(Primitive3D.polyline((Point3D(p.x, p.y, top) for p in rail), style=style))
+            primitives.extend(rail_polylines(left, right, top, style))
             if show_ties:
-                primitives.extend(cls._ties(left, right, elevation + rail_elevation / 2, tie_spacing))
+                primitives.extend(rail_ties(
+                    left, right, elevation + rail_elevation / 2, tie_spacing, tie_style,
+                    overhang=cls.TIE_OVERHANG,
+                ))
 
         if show_markers:
             style = Style3D(color=1, layer=cls.MARKER_LAYER)
-            primitives.extend(
-                Primitive3D.line(Point3D(p.x, p.y, elevation), Point3D(p.x, p.y, elevation + 2), style)
-                for _, p, _ in geometry.markers
-            )
+            primitives.extend(vertical_marker(p, elevation, 2, style) for _, p, _ in geometry.markers)
         return scene.add_all(primitives) if primitives else scene
-
-    @classmethod
-    def _ties(cls, left, right, elevation: float, spacing: float):
-        style = Style3D(color=6, layer=cls.TIE_LAYER, lineweight=0.3)
-        if len(left) != len(right):
-            raise ValueError("turnout rails must have matching samples for ties")
-
-        travelled = 0.0
-        index = 0
-        for l0, l1, r0, r1 in zip(left, left[1:], right, right[1:]):
-            length = math.hypot(((l1.x - l0.x) + (r1.x - r0.x)) / 2,
-                                ((l1.y - l0.y) + (r1.y - r0.y)) / 2)
-            if length == 0:
-                continue
-            end = travelled + length
-            while index * spacing <= end:
-                fraction = (index * spacing - travelled) / length
-                lx, ly = l0.x + (l1.x - l0.x) * fraction, l0.y + (l1.y - l0.y) * fraction
-                rx, ry = r0.x + (r1.x - r0.x) * fraction, r0.y + (r1.y - r0.y) * fraction
-                width = math.hypot(lx - rx, ly - ry)
-                if width > 0:
-                    dx = cls.TIE_OVERHANG * (lx - rx) / width
-                    dy = cls.TIE_OVERHANG * (ly - ry) / width
-                    yield Primitive3D.line(
-                        Point3D(lx + dx, ly + dy, elevation), Point3D(rx - dx, ry - dy, elevation), style,
-                    )
-                index += 1
-            travelled = end
 
     @classmethod
     def render_turnout_set_3d(
