@@ -85,3 +85,31 @@ print([item.station_on_source for item in crossing.turnouts])
 `center`는 첫 번째 본선의 원시 측점입니다. 자동 배치는 평행하고 진행 방향이 같은 본선에서 두 번째 본선의 측점 원점과 양쪽 분기 방향을 계산합니다. 수동 배치는 `ScissorsCrossoverBuilder.with_stations()`과 `with_sides()`를 사용합니다. 일반 단·복선 연결은 `CrossoverBuilder`로 모델을 생성하고 `compute_geometry(a, b)`로 기하를 계산합니다. 결과의 유효성과 오류 메시지를 확인하세요.
 
 분기기 기하는 직선 접근부와 원호로 이상화합니다. `lead_length`는 이 모델의 원곡선 앞 직선장입니다. 시공·승인에는 제조사 제원과 별도의 설계 검증이 필요합니다.
+
+## 분기기 2D·3D 출력
+
+`TurnoutPreview`는 같은 레일 좌표를 사용해 평면도 DXF와 3D DXF·HTML을 만듭니다. 궤간은 철도 선형에서 가져오며 3D의 `elevation`은 모델 기준 표고입니다.
+
+```python
+from myalignment.alignment import AlignmentBuilder
+from myalignment.turnout.turnout import Turnout
+from myalignment.turnout.turnout_preview import TurnoutPreview
+from myalignment.turnout.type import TurnoutSide, TurnoutType
+
+axis = (
+    AlignmentBuilder("Main").with_pi_coords([(0, 0), (500, 0)])
+    .with_start_station(1000).as_rail_alignment().build()
+)
+kind = TurnoutType("No. 12", frog_number=12, lead_length=30, radius=300)
+turnout = Turnout("T1", kind, axis.name, "Branch", 1150, TurnoutSide.RIGHT)
+
+plan = TurnoutPreview.preview_2d(axis, turnout, dxf_path="turnout-plan.dxf")
+spatial = TurnoutPreview.preview_3d(
+    axis, [turnout], elevation=50, dxf_path="turnout-3d.dxf", html_path="turnout-3d.html",
+)
+assert plan.primitives and spatial.primitives
+```
+
+PS는 본선의 원시 측점입니다. 표시용 PF는 분기곡선 끝의 종방향 길이에 해당하는 본선 위치이고, PC는 분기 중심선의 곡선 끝입니다. PC의 측점은 PS부터 잰 분기 중심선 거리입니다. 분기 중심선은 PS의 접선으로 시작하는 이상화된 직선·원곡선입니다. 마커와 레일은 배치 확인용이며 실제 크로싱과 여유 한계는 제조사 제원으로 확인해야 합니다.
+
+`TurnoutGeometryCalculator.calculate()`로 만든 기하를 `TurnoutRenderer.render_2d()`와 `Turnout3DRenderer.render_3d()`에 전달하면 기존 Scene에 추가하거나 마커와 침목 표시를 조정할 수 있습니다. 3D 렌더러의 `rail_elevation`은 모델 기준 표고 위 레일 높이입니다. 3D HTML을 여는 방법은 [도면과 3D 출력](rendering.md#횡단-뷰-3d-dxf와-브라우저-미리보기)을 참고하세요.
