@@ -5,8 +5,9 @@ from typing import TYPE_CHECKING
 
 from cadgeom import Point2d
 
+from myalignment.render._rail_plan import add_plan_primitives, cross_marker
 from myalignment.render.primitives import Primitive, Style
-from myalignment.render.scene import Layer, Scene
+from myalignment.render.scene import Scene
 
 if TYPE_CHECKING:
     from myalignment.turnout.geometry import TurnoutGeometry
@@ -46,11 +47,7 @@ class TurnoutRenderer:
         for name, point, station in geometry.markers:
             x, y = point.x, point.y
             if show_markers:
-                primitives.extend((
-                    Primitive.line(Point2d(x - 2, y - 2), Point2d(x + 2, y + 2), marker_style),
-                    Primitive.line(Point2d(x - 2, y + 2), Point2d(x + 2, y - 2), marker_style),
-                    Primitive.circle(point, 2, marker_style),
-                ))
+                primitives.extend(cross_marker(point, marker_style))
             if show_labels:
                 primitives.append(Primitive.text(
                     Point2d(x + 3, y + 3), f"{name} (STA {station:.2f})", 1.5, style=label_style,
@@ -66,6 +63,4 @@ class TurnoutRenderer:
                 for index, row in enumerate(reversed(rows)) if row
             )
 
-        for layer, color in {p.style.layer: p.style.color for p in primitives}.items():
-            scene = scene.add_layer(Layer(layer, color=color))
-        return scene.add_all(primitives) if primitives else scene
+        return add_plan_primitives(scene, primitives)

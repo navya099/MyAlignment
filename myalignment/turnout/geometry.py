@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import math
 from typing import TYPE_CHECKING
@@ -64,6 +65,25 @@ def _interval(start: float, end: float, step: float):
     return (start + (end - start) * i / count for i in range(count))
 
 
+def _sample_main_rails(alignment: Alignment, breaks: Sequence[float], gauge: float, step: float):
+    stations = [station for start, end in zip(breaks, breaks[1:]) for station in _interval(start, end, step)]
+    stations.append(breaks[-1])
+    left = tuple(alignment.point_at(station, -gauge / 2) for station in stations)
+    right = tuple(alignment.point_at(station, gauge / 2) for station in stations)
+    return left, right
+
+
+def _offset_branch_rails(frames: Sequence[tuple[SamplePoint, float]], gauge: float):
+    half = gauge / 2
+    return tuple(
+        tuple(
+            Point2d(point.x - offset * math.sin(heading), point.y + offset * math.cos(heading))
+            for point, heading in frames
+        )
+        for offset in (half, -half)
+    )
+
+
 class TurnoutGeometryCalculator:
     """기존 직선 리드·원곡선 모델에서 표시용 레일을 생성한다."""
 
@@ -125,18 +145,8 @@ class TurnoutGeometryCalculator:
 
         start = max(alignment.start_station, ps_station - extension)
         end = min(alignment.end_station, pf_station + extension)
-        stations = (*_interval(start, ps_station, sample_step), *_interval(ps_station, pf_station, sample_step),
-                    *_interval(pf_station, end, sample_step), end)
-        half = gauge / 2
-        rails = []
-        for offset in (-half, half):
-            rails.append(tuple(alignment.point_at(station, offset) for station in stations))
-        for offset in (half, -half):
-            rails.append(tuple(
-                Point2d(point.x - offset * math.sin(heading), point.y + offset * math.cos(heading))
-                for point, heading in branch_frames
-            ))
-        main_left, main_right, branch_left, branch_right = rails
+        main_left, main_right = _sample_main_rails(alignment, (start, ps_station, pf_station, end), gauge, sample_step)
+        branch_left, branch_right = _offset_branch_rails(branch_frames, gauge)
         return TurnoutGeometry(
             ps_station=ps_station, ps_point=ps, ps_azimuth=azimuth,
             pf_station=pf_station, pf_point=pf, pc_station=kind.lead_length + kind.arc_length,

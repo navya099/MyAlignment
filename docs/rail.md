@@ -113,3 +113,31 @@ assert plan.primitives and spatial.primitives
 PS는 본선의 원시 측점입니다. 표시용 PF는 분기곡선 끝의 종방향 길이에 해당하는 본선 위치이고, PC는 분기 중심선의 곡선 끝입니다. PC의 측점은 PS부터 잰 분기 중심선 거리입니다. 분기 중심선은 PS의 접선으로 시작하는 이상화된 직선·원곡선입니다. 마커와 레일은 배치 확인용이며 실제 크로싱과 여유 한계는 제조사 제원으로 확인해야 합니다.
 
 `TurnoutGeometryCalculator.calculate()`로 만든 기하를 `TurnoutRenderer.render_2d()`와 `Turnout3DRenderer.render_3d()`에 전달하면 기존 Scene에 추가하거나 마커와 침목 표시를 조정할 수 있습니다. 3D 렌더러의 `rail_elevation`은 모델 기준 표고 위 레일 높이입니다. 3D HTML을 여는 방법은 [도면과 3D 출력](rendering.md#횡단-뷰-3d-dxf와-브라우저-미리보기)을 참고하세요.
+
+## 크로스오버 2D 출력
+
+`Crossover2DPreview`는 평면도 Scene을 만들고 선택적으로 DXF를 저장합니다. 단일 크로스오버는 연결 경로 하나를, 이중 크로스오버는 두 경로를 사용합니다. 각 연결 경로에는 좌우 레일이 있으며, 다이아몬드 마커는 두 직선 연결부의 실제 교점을 표시합니다.
+
+```python
+from math import tan
+
+from myalignment.alignment import AlignmentBuilder
+from myalignment.turnout.crossover_builder import CrossoverBuilder
+from myalignment.turnout.crossover_preview import Crossover2DPreview
+from myalignment.turnout.type import TurnoutSide, TurnoutType
+
+a = AlignmentBuilder("A").with_pi_coords([(0, 0), (500, 0)]).as_rail_alignment().build()
+b = AlignmentBuilder("B").with_pi_coords([(0, 4.3), (500, 4.3)]).as_rail_alignment().build()
+kind = TurnoutType("No. 12", frog_number=12, lead_length=17, radius=373)
+advance = 2 * kind.run + (4.3 - 2 * kind.rise) / tan(kind.frog_angle)
+crossover = (
+    CrossoverBuilder("X1").with_alignments("A", "B").with_turnout_type(kind)
+    .at_stations(100, 100 + advance).with_sides(TurnoutSide.LEFT, TurnoutSide.RIGHT)
+    .as_double().build()
+)
+
+scene = Crossover2DPreview.preview(a, b, crossover, dxf_path="crossover.dxf")
+assert any(layer.name == "C-CROSSOVER-DIAMOND" for layer in scene.layers)
+```
+
+`preview(..., scene=기존_scene)`로 여러 평면도를 합성할 수 있습니다. 궤간, 샘플 간격, 표시 범위를 직접 정하려면 `CrossoverGeometryCalculator.calculate()`의 결과를 `Crossover2DRenderer.render_2d()`에 넘깁니다. PS와 PF 레이블은 해당 본선의 원시 측점을 표시합니다.

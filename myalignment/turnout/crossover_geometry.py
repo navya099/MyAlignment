@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
+
+from cadgeom import Point2d
+
 from myalignment.turnout.geometry_sampling import CompleteConnection, SamplePoint
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +18,8 @@ class ConnectionGeometry:
 
 @dataclass(frozen=True, slots=True)
 class CrossoverGeometry:
+    """검증된 연결 기하와 선택적으로 계산한 평면도용 좌표."""
+
     turnout1_station: float = 0.0
     turnout1_point: Any = None
     turnout1_azimuth: float = 0.0
@@ -28,6 +33,15 @@ class CrossoverGeometry:
     required_station_delta: float = 0.0
     is_valid: bool = False
     error_message: str = ''
+    main1_left_rail: tuple[Point2d, ...] = field(default=(), kw_only=True)
+    main1_right_rail: tuple[Point2d, ...] = field(default=(), kw_only=True)
+    main2_left_rail: tuple[Point2d, ...] = field(default=(), kw_only=True)
+    main2_right_rail: tuple[Point2d, ...] = field(default=(), kw_only=True)
+    connecting_rails: tuple[tuple[tuple[Point2d, ...], tuple[Point2d, ...]], ...] = field(default=(), kw_only=True)
+    turnout_markers: tuple[tuple[str, Point2d, float | None], ...] = field(default=(), kw_only=True)
+    diamond_center: Point2d | None = field(default=None, kw_only=True)
+    diamond_diagonal1: float = field(default=0.0, kw_only=True)
+    diamond_diagonal2: float = field(default=0.0, kw_only=True)
 
     def __post_init__(self):
         if not self.is_valid and not self.error_message:

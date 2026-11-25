@@ -81,13 +81,20 @@ class CompleteConnection:
     second: TurnoutCurve
 
     def sample_points(self, step: float = 0.5) -> tuple[SamplePoint, ...]:
-        left = self.first.sample_points(step)
-        right = self.second.sample_points(step)
+        return tuple(point for point, _ in self.sample_frames(step))
+
+    def sample_frames(self, step: float = 0.5) -> tuple[tuple[SamplePoint, float], ...]:
+        """Sample the turnout curves and straight connector with forward tangents."""
+        left = self.first.sample_frames(step)
+        right = self.second.sample_frames(step)
         # The two turnout endpoints are joined by an analytic straight line.
-        start, end = left[-1], right[0]
-        length = math.hypot(end.x-start.x, end.y-start.y)
+        start, end = left[-1][0], right[0][0]
+        dx, dy = end.x - start.x, end.y - start.y
+        length = math.hypot(dx, dy)
         n = max(1, math.ceil(length/step))
-        middle = tuple(SamplePoint(start.x+(end.x-start.x)*i/n,
-                                   start.y+(end.y-start.y)*i/n)
-                       for i in range(1, n))
+        azimuth = math.atan2(dy, dx)
+        middle = tuple(
+            (SamplePoint(start.x + dx * i / n, start.y + dy * i / n), azimuth)
+            for i in range(1, n)
+        )
         return left + middle + right
