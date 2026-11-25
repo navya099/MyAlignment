@@ -61,3 +61,35 @@ assert axis.display_to_raw_stations(2023) == (1073.0,)
 `intersection_with()`는 호출한 선형의 원시 측점으로 교차점을 반환합니다. 요소의 겹침 구간은 양 끝점을 반환합니다. 한 표시 측점에 여러 원시 측점이 대응할 수 있으므로 다중 후보에는 `display_to_raw_stations()`를 사용합니다. `display_to_raw_station()`은 일치하는 원시 측점이 하나일 때만 값을 반환합니다.
 
 `offset_alignment()`는 오른쪽 양수 규약으로 평행 선형을 만들고 새 길이에 따라 측점을 갱신합니다. `reversed_alignment()`는 진행 방향을 바꿉니다. 재생성이 필요한 저장 코리더 표면이나 크로스오버 기하는 새 모델에 맞춰 다시 계산합니다.
+
+## 선형 제원표
+
+`AlignmentTableRenderer`는 직선, 원곡선, 완화곡선의 제원을 각각 또는 하나의 통합 표로 그립니다. 측점은 원시 측점으로 표시합니다. 방위각은 +X축에서 반시계 방향으로 잰 도 단위 값이며, Delta는 요소 내부의 방향 변화량을 도 단위로 표시합니다.
+
+```python
+from cadgeom import Point2d
+
+from myalignment.alignment import AlignmentBuilder, AlignmentTableStyle
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.render.alignment_renderer import AlignmentRenderer
+from myalignment.render.alignment_table_renderer import AlignmentTableRenderer
+
+axis = (
+    AlignmentBuilder("Main")
+    .with_pi_coords([(0, 0), (150, 0), (150, 180)])
+    .with_radii([None, 40, None])
+    .with_spiral_lengths([0, 12, 0], [0, 16, 0])
+    .with_start_station(1000)
+    .build()
+)
+style = AlignmentTableStyle.segment_style()
+assert len(AlignmentTableRenderer.collect_rows(axis, style)) == 5
+scene = AlignmentTableRenderer.render(
+    AlignmentRenderer.render_plan(axis), axis, style, Point2d(0, -30),
+)
+DxfWriter(scene).write("alignment-table.dxf")
+```
+
+`line_style()`, `curve_style()`, `spiral_style()`로 요소 유형을 선택할 수 있습니다. `TableColumnSpec`으로 제목, 폭, 숫자 형식을 지정합니다. 폭을 0으로 두면 내용에 맞게 계산합니다. `sort_by`는 표에 표시하지 않는 열에도 적용할 수 있습니다. `split_table=True`를 쓰면 `max_rows_per_table`씩 나눠 제목과 머리글이 있는 표를 오른쪽에 배치합니다.
+
+적용할 수 없는 제원은 빈 셀로 둡니다. 완화곡선의 반경에는 원곡선 쪽 끝의 반경을 표시하고, A 값은 클로소이드 모델의 설계 파라미터에서 계산합니다.

@@ -2,11 +2,18 @@
 
 from typing import TYPE_CHECKING
 
+from .table_column import AlignmentTableColumn, TableColumnSpec
+from .table_style import AlignmentTableStyle
+from .table_type import AlignmentTableType
+
 if TYPE_CHECKING:
     from .alignment import Alignment
     from .alignment_builder import AlignmentBuilder
 
-__all__ = ["Alignment", "AlignmentBuilder"]
+__all__ = [
+    "Alignment", "AlignmentBuilder", "AlignmentTableColumn", "AlignmentTableStyle",
+    "AlignmentTableType", "TableColumnSpec",
+]
 
 
 def __getattr__(name: str):
