@@ -26,6 +26,8 @@ class PointCode(Enum):
     # 철도
     LEFT_RAIL = "LeftRail"
     RIGHT_RAIL = "RightRail"
+    BRANCH_LEFT_RAIL = "BranchLeftRail"
+    BRANCH_RIGHT_RAIL = "BranchRightRail"
     # 일반
     CROWN = "Crown"
     EDGE = "Edge"

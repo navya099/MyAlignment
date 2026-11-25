@@ -1,5 +1,6 @@
 """Shared 3D primitives for paired rails and their markers."""
 from collections.abc import Iterator, Sequence
+from itertools import repeat
 import math
 
 from cadgeom import Point2d
@@ -18,10 +19,16 @@ def rail_top(elevation: float, rail_elevation: float, tie_spacing: float) -> flo
 
 def rail_polylines(
     left: Sequence[Point2d], right: Sequence[Point2d], elevation: float, style: Style3D,
+    *, levels: Sequence[float] | None = None,
 ) -> Iterator[Primitive3D]:
+    if levels is not None and (len(left) != len(levels) or len(right) != len(levels)):
+        raise ValueError("track elevations must match both rail sample counts")
     for rail in (left, right):
         if len(rail) >= 2:
-            yield Primitive3D.polyline((Point3D(p.x, p.y, elevation) for p in rail), style=style)
+            offsets = repeat(0.0, len(rail)) if levels is None else levels
+            yield Primitive3D.polyline(
+                (Point3D(p.x, p.y, elevation + dz) for p, dz in zip(rail, offsets, strict=True)), style=style,
+            )
 
 
 def rail_ties(
@@ -32,13 +39,14 @@ def rail_ties(
     style: Style3D,
     *,
     overhang: float,
+    levels: Sequence[float] | None = None,
 ) -> Iterator[Primitive3D]:
     if len(left) != len(right):
         raise ValueError("rails must have matching samples for ties")
 
     travelled = 0.0
     index = 0
-    for l0, l1, r0, r1 in zip(left, left[1:], right, right[1:]):
+    for segment, (l0, l1, r0, r1) in enumerate(zip(left, left[1:], right, right[1:])):
         length = math.hypot(((l1.x - l0.x) + (r1.x - r0.x)) / 2,
                             ((l1.y - l0.y) + (r1.y - r0.y)) / 2)
         if length == 0:
@@ -52,8 +60,11 @@ def rail_ties(
             if width > 0:
                 dx = overhang * (lx - rx) / width
                 dy = overhang * (ly - ry) / width
+                z = elevation
+                if levels is not None:
+                    z += (1 - fraction) * levels[segment] + fraction * levels[segment + 1]
                 yield Primitive3D.line(
-                    Point3D(lx + dx, ly + dy, elevation), Point3D(rx - dx, ry - dy, elevation), style,
+                    Point3D(lx + dx, ly + dy, z), Point3D(rx - dx, ry - dy, z), style,
                 )
             index += 1
         travelled = end

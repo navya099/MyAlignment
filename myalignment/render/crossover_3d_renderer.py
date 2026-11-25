@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import math
 from typing import TYPE_CHECKING
 
@@ -41,12 +42,17 @@ class Crossover3DRenderer:
         *,
         rail_elevation: float = RAIL_ELEVATION,
         tie_spacing: float = TIE_SPACING,
+        track_levels: Sequence[Sequence[float]] | None = None,
+        marker_levels: Sequence[float] | None = None,
+        diamond_level: float = 0.0,
     ) -> Scene3D:
         """단일 또는 이중 크로스오버를 기존 Scene3D에 추가한다.
 
         CrossoverGeometryCalculator로 계산한 레일을 사용한다.
         레일 상단은 elevation에 rail_elevation을 더한 표고다.
         gauge를 지정하는 경우 좌표 계산에 사용한 궤간과 일치해야 한다.
+        track_levels는 두 본선과 연결 경로 순서의 샘플별 표고 오프셋이다.
+        marker_levels는 geometry.turnout_markers 순서의 표고 오프셋이다.
         """
         if not geometry.is_valid:
             raise ValueError(geometry.error_message)
@@ -57,9 +63,12 @@ class Crossover3DRenderer:
         ):
             raise ValueError("gauge must match crossover geometry")
         top = rail_top(elevation, rail_elevation, tie_spacing)
+        if track_levels is not None and len(track_levels) != 2 + len(geometry.connecting_rails):
+            raise ValueError("track_levels must contain both main tracks and each connection")
 
         primitives = []
         tie_style = Style3D(color=6, layer=cls.TIE_LAYER, lineweight=0.3)
+        track_index = 0
         for style, pairs in (
             (Style3D(color=7, layer=cls.MAIN1_LAYER, lineweight=0.6),
              ((geometry.main1_left_rail, geometry.main1_right_rail),)),
@@ -68,26 +77,32 @@ class Crossover3DRenderer:
             (Style3D(color=3, layer=cls.CONNECT_LAYER, lineweight=0.5), geometry.connecting_rails),
         ):
             for left, right in pairs:
-                primitives.extend(rail_polylines(left, right, top, style))
+                levels = None if track_levels is None else track_levels[track_index]
+                track_index += 1
+                primitives.extend(rail_polylines(left, right, top, style, levels=levels))
                 if show_ties:
                     primitives.extend(rail_ties(
                         left, right, elevation + rail_elevation / 2, tie_spacing, tie_style,
-                        overhang=cls.TIE_OVERHANG,
+                        overhang=cls.TIE_OVERHANG, levels=levels,
                     ))
 
         if show_markers:
             marker_style = Style3D(color=2, layer=cls.MARKER_LAYER, lineweight=0.5)
-            for _, point, station in geometry.turnout_markers:
+            markers = geometry.turnout_markers
+            levels = (0.0,) * len(markers) if marker_levels is None else marker_levels
+            for (_, point, station), dz in zip(markers, levels, strict=True):
                 # PS and PF have source stations. PC uses the branch path instead.
                 if station is not None:
-                    primitives.append(vertical_marker(point, elevation, cls.MARKER_HEIGHT, marker_style))
-                    primitives.extend(cls._cross(point, elevation + cls.MARKER_HEIGHT, 1.5, marker_style))
+                    base = elevation + dz
+                    primitives.append(vertical_marker(point, base, cls.MARKER_HEIGHT, marker_style))
+                    primitives.extend(cls._cross(point, base + cls.MARKER_HEIGHT, 1.5, marker_style))
 
         if show_diamond and geometry.diamond_center is not None:
             diamond_style = Style3D(color=1, layer=cls.DIAMOND_LAYER, lineweight=0.8)
             center = geometry.diamond_center
-            primitives.append(vertical_marker(center, elevation, cls.MARKER_HEIGHT, diamond_style))
-            primitives.extend(cls._cross(center, elevation + 0.5, 3.0, diamond_style))
+            base = elevation + diamond_level
+            primitives.append(vertical_marker(center, base, cls.MARKER_HEIGHT, diamond_style))
+            primitives.extend(cls._cross(center, base + 0.5, 3.0, diamond_style))
 
         return scene.add_all(primitives) if primitives else scene
 

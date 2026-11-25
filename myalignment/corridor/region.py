@@ -58,7 +58,12 @@ class CorridorRegion:
     def cross_section_at(self, station: float):
         points, links = self.assembly.generate_cross_section(self.target_mapping)
         if self._mirrored:
-            rail_codes = {PointCode.LEFT_RAIL: PointCode.RIGHT_RAIL, PointCode.RIGHT_RAIL: PointCode.LEFT_RAIL}
+            rail_codes = {
+                PointCode.LEFT_RAIL: PointCode.RIGHT_RAIL,
+                PointCode.RIGHT_RAIL: PointCode.LEFT_RAIL,
+                PointCode.BRANCH_LEFT_RAIL: PointCode.BRANCH_RIGHT_RAIL,
+                PointCode.BRANCH_RIGHT_RAIL: PointCode.BRANCH_LEFT_RAIL,
+            }
             reflected = {
                 point: replace(point, x=-point.x, code=rail_codes.get(point.code, point.code))
                 for point in (*points, *(p for link in links for p in (link.start, link.end)))

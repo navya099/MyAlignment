@@ -76,3 +76,45 @@ corridor = CorridorBuilder().add_region_with_assembly(
 assert corridor.regions[0].target_mapping.get("EdgeOffset").object_name == "Edge"
 assert corridor.cross_section_at(20) == assembly.generate_cross_section()
 ```
+
+## 코리더와 턴아웃 통합 출력
+
+`TurnoutAlignmentBuilder`는 기존 턴아웃 기하의 PC에서 접선 방향으로 분기선을 만듭니다. `TurnoutCorridorBuilder`는 두 선형을 별도 기준선으로 등록하고 본선을 턴아웃 앞·턴아웃·턴아웃 뒤 영역으로 나눕니다. 각 선형에 연결된 설계 종단(FG)이 있으면 기준선에 지정합니다.
+
+```python
+from dataclasses import replace
+
+from myalignment.alignment import AlignmentBuilder
+from myalignment.assembly import AssemblyBuilder
+from myalignment.assembly.subassemblies.rail_track import SingleTrack
+from myalignment.corridor.corridor_turnout_preview import CorridorTurnoutPreview
+from myalignment.corridor.turnout_corridor_builder import TurnoutCorridorBuilder
+from myalignment.profile import ProfileBuilder, ProfileType
+from myalignment.turnout.turnout import Turnout
+from myalignment.turnout.turnout_alignment_builder import TurnoutAlignmentBuilder
+from myalignment.turnout.type import TurnoutSide, TurnoutType
+
+main_grade = ProfileBuilder("Main grade", ProfileType.FG).add_tangent(1000, 1200, 100, 104).build()
+main = (
+    AlignmentBuilder("Main").with_pi_coords([(0, 0), (200, 0)])
+    .with_start_station(1000).with_profile(main_grade).as_rail_alignment().build()
+)
+turnout = Turnout("T1", TurnoutType("F12", 12, 10, 100), "Main", "Branch", 1040, TurnoutSide.LEFT)
+branch = TurnoutAlignmentBuilder.build_branch(main, turnout, branch_length=80)
+branch_grade = (
+    ProfileBuilder("Branch grade", ProfileType.FG)
+    .add_tangent(branch.start_station, branch.end_station, 101, 103).build()
+)
+branch = replace(branch, profiles=(branch_grade,))
+track = AssemblyBuilder().add_center(SingleTrack(gauge=main.gauge)).build()
+corridor = TurnoutCorridorBuilder.build(main, branch, turnout, track, track)
+scene = CorridorTurnoutPreview.preview_3d(
+    main, branch, corridor, turnouts=[turnout],
+    dxf_path="corridor-turnout.dxf", html_path="corridor-turnout.html",
+)
+assert any(item.style.layer == "C-TURNOUT-3D-BRANCH" for item in scene.primitives)
+```
+
+통합 장면의 레일 상단은 기준선 종단 표고에 맞춥니다. 별도 분기선이 PC에 접속하면 분기 레일의 끝 표고는 그 기준선 종단에서 읽고, 그 외에는 본선 PF 표고를 사용합니다. 크로스오버 연결 레일도 양쪽 접속 측점의 표고를 보간합니다. 종단이 지정되지 않은 기준선은 표고 0을 사용합니다. 연결 레일의 개별 캔트는 계산하지 않습니다.
+
+특수 횡단면을 지정하려면 `turnout_assembly=`에 어셈블리를 전달합니다. `TurnoutAssembly`는 부호 있는 고정 횡거로 분기 레일을 표시하는 횡단면입니다. 일반적인 통합 뷰에서는 본선 횡단면을 유지하고 분기곡선은 별도의 레일 경로로 배치합니다. [3D HTML 열기](rendering.md#횡단-뷰-3d-dxf와-브라우저-미리보기)

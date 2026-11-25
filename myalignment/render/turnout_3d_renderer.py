@@ -38,35 +38,47 @@ class Turnout3DRenderer:
         show_markers: bool = True,
         *,
         tie_spacing: float = TIE_SPACING,
+        track_levels: Sequence[Sequence[float]] | None = None,
+        marker_levels: Sequence[float] | None = None,
     ) -> Scene3D:
         """기준 표고와 그 위 레일 높이를 적용한다.
 
         gauge를 지정하는 경우 기하의 궤간과 일치해야 한다. 침목은
         두 레일의 중점 경로를 따라 tie_spacing 간격으로 배치한다.
+        track_levels는 본선과 분기선 순서의 샘플별 표고 오프셋이다.
+        marker_levels는 geometry.markers 순서의 표고 오프셋이다.
         """
         if not geometry.is_valid:
             raise ValueError(geometry.error_message)
         top = rail_top(elevation, rail_elevation, tie_spacing)
         if gauge is not None and not math.isclose(gauge, geometry.gauge, rel_tol=0.0, abs_tol=1e-9):
             raise ValueError("gauge must match turnout geometry")
+        if track_levels is not None and len(track_levels) != 2:
+            raise ValueError("track_levels must contain the main and branch tracks")
 
         primitives = []
         tie_style = Style3D(color=6, layer=cls.TIE_LAYER, lineweight=0.3)
-        for layer, color, left, right in (
+        for index, (layer, color, left, right) in enumerate((
             (cls.MAIN_RAIL_LAYER, 7, geometry.main_left_rail, geometry.main_right_rail),
             (cls.BRANCH_RAIL_LAYER, 3, geometry.branch_left_rail, geometry.branch_right_rail),
-        ):
+        )):
+            levels = None if track_levels is None else track_levels[index]
             style = Style3D(color=color, layer=layer, lineweight=0.5)
-            primitives.extend(rail_polylines(left, right, top, style))
+            primitives.extend(rail_polylines(left, right, top, style, levels=levels))
             if show_ties:
                 primitives.extend(rail_ties(
                     left, right, elevation + rail_elevation / 2, tie_spacing, tie_style,
-                    overhang=cls.TIE_OVERHANG,
+                    overhang=cls.TIE_OVERHANG, levels=levels,
                 ))
 
         if show_markers:
             style = Style3D(color=1, layer=cls.MARKER_LAYER)
-            primitives.extend(vertical_marker(p, elevation, 2, style) for _, p, _ in geometry.markers)
+            markers = geometry.markers
+            levels = (0.0,) * len(markers) if marker_levels is None else marker_levels
+            primitives.extend(
+                vertical_marker(p, elevation + dz, 2, style)
+                for (_, p, _), dz in zip(markers, levels, strict=True)
+            )
         return scene.add_all(primitives) if primitives else scene
 
     @classmethod
