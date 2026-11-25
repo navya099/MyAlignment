@@ -1,16 +1,18 @@
 # corridor/corridor.py
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Iterator, TYPE_CHECKING
 
 from myalignment.corridor.baseline import CorridorBaseline
+from myalignment.corridor.feature_line_manager import CorridorFeatureLineManager
 from myalignment.corridor.region import CorridorRegion
 from myalignment.corridor.surface_set import CorridorSurfaceSet
 from myalignment.target.reference import TargetObjectType
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
+    from myalignment.corridor.feature_line_spec import CorridorFeatureLineSpec
     from myalignment.corridor.surface_builder import CorridorSurfaceSpec
     from myalignment.profile.profile import Profile
     from myalignment.surface.tin_surface import TinSurface
@@ -30,6 +32,7 @@ class Corridor:
     regions: tuple[CorridorRegion, ...] = field(default_factory=tuple)
 
     surfaces: CorridorSurfaceSet = field(default_factory=CorridorSurfaceSet)
+    feature_lines: CorridorFeatureLineManager = field(default_factory=CorridorFeatureLineManager)
 
     def __post_init__(self):
         # 영역 정렬 검증
@@ -121,7 +124,7 @@ class Corridor:
         """새 영역 추가한 새 코리더."""
         new_list = list(self.regions) + [region]
         new_list.sort(key=lambda r: r.start_station)
-        return replace(self, regions=tuple(new_list))
+        return replace(self, regions=tuple(new_list), feature_lines=CorridorFeatureLineManager())
 
     def _rename_alignment(self, old_name: str, new_name: str) -> "Corridor":
         def rename_reference(reference):
@@ -179,6 +182,7 @@ class Corridor:
             ),
             regions=tuple(sorted(regions, key=lambda region: region.start_station)),
             surfaces=self.surfaces if reverse or not affected else CorridorSurfaceSet(),
+            feature_lines=CorridorFeatureLineManager() if affected else self.feature_lines,
         )
 
     def _replace_profiles(self, alignment_name: str, replacements: Mapping[str, str]) -> "Corridor":
@@ -213,7 +217,31 @@ class Corridor:
             return self
         return replace(
             self, baselines=tuple(baselines), regions=tuple(regions), surfaces=CorridorSurfaceSet(),
+            feature_lines=CorridorFeatureLineManager(),
         )
+
+    def extract_feature_lines(
+        self, specs: Sequence[CorridorFeatureLineSpec] | None = None, standard: str = "road", *,
+        alignments: Mapping[str, Alignment], profiles: Mapping[str, Profile] | None = None,
+        sample_frequency: float | None = None, baseline_name: str | None = None,
+    ) -> Corridor:
+        """월드 좌표로 피처라인을 추출해 등록한 새 코리더를 반환한다.
+
+        alignments와 profiles에는 기준선에 지정한 이름을 키로 사용한다.
+        specs를 생략하면 road 또는 rail 표준 사양을 사용한다.
+        """
+        manager = CorridorFeatureLineManager
+        options = dict(alignments=alignments, profiles=profiles,
+                       sample_frequency=sample_frequency, baseline_name=baseline_name)
+        if specs is not None:
+            result = manager.from_corridor(self, specs, **options)
+        elif standard == "road":
+            result = manager.extract_standard_road(self, **options)
+        elif standard == "rail":
+            result = manager.extract_standard_rail(self, **options)
+        else:
+            raise ValueError("standard must be road or rail")
+        return replace(self, feature_lines=result)
 
     def build_surface(
         self,

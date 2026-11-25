@@ -164,3 +164,40 @@ assert scene3d.metadata["link_surfaces"]
 3D 뷰에서 각 표면의 메쉬와 와이어프레임 레이어를 독립적으로 켜고 끌 수 있습니다. HTML의 색상 범례에는 표면 이름과 평면 면적이 표시됩니다. `LinkSurfaceSpec.color`를 지정하면 기본 코드 색상을 덮어씁니다. `opacity`는 HTML 메쉬에 적용되며 DXF R12 출력은 색상과 레이어를 저장합니다.
 
 `LinkSurface3DPreview.preview_flat(manager, path, z_offset_per_link=5)`는 층마다 Z 간격을 줍니다. `LinkSurface3DScene.from_manager(manager).merge_selected(codes)`는 고른 단일 코드의 장면을 합칩니다. `LinkSurface3DExport.export_all(manager, output_dir)`은 통합 DXF·HTML과 단일 코드별 DXF를 저장합니다. 여러 코드를 병합하거나 점으로 추출한 표면은 통합 장면에 포함됩니다. [3D HTML 열기](rendering.md#횡단-뷰-3d-dxf와-브라우저-미리보기)
+
+## 코리더 피처라인 추출
+
+`Corridor.extract_feature_lines()`는 추출 결과를 `feature_lines`에 등록한 새 코리더를 반환합니다. `alignments`는 기준선의 선형 이름을 키로 사용합니다. 기준선에 연결한 종단이 선형 자체에 등록되어 있지 않으면 `profiles`에 종단 이름으로 전달합니다. 기준선에 종단 이름이 없으면 기준 표고는 0m입니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.assembly.assembly import AssemblyBuilder
+from myalignment.assembly.codes import PointCode
+from myalignment.assembly.subassemblies.basic_lane import BasicLane
+from myalignment.corridor.corridor_builder import CorridorBuilder
+from myalignment.corridor.feature_line_spec import CorridorFeatureLineSpec
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.render.feature_line_2d_renderer import FeatureLine2DRenderer
+from myalignment.render.feature_line_3d_renderer import FeatureLine3DPreview
+from myalignment.render.scene import Scene
+
+axis = AlignmentBuilder("Main").with_pi_coords([(0, 0), (40, 0)]).build()
+lane = AssemblyBuilder().add_both(lambda side: BasicLane(side=side)).build()
+corridor = (
+    CorridorBuilder("Road").add_baseline_from_alignment(axis)
+    .add_region("Paving", 0, 40, lane, frequency=5).build()
+)
+specs = [
+    CorridorFeatureLineSpec("Left edge", point_code=PointCode.LANE_EDGE, side="left", color=1),
+    CorridorFeatureLineSpec("Fixed offset", "offset", offset=1.5, color=3),
+]
+manager = corridor.extract_feature_lines(specs, alignments={axis.name: axis}).feature_lines
+assert manager.get("Left edge").point_at_station(12) is not None
+DxfWriter(FeatureLine2DRenderer.render(Scene(), manager)).write("feature-lines-plan.dxf")
+FeatureLine3DPreview.preview(manager, "feature-lines.html", "feature-lines-3d.dxf")
+```
+
+- `point_code`는 지정 코드의 점을 사용합니다. `left`와 `right`는 해당 방향의 가장 바깥 점을, `both`는 중심선에 가장 가까운 점을 선택합니다. 양측 선이 필요하면 좌우 사양을 하나씩 지정합니다.
+- `link_code`는 링크의 시작점 또는 끝점을 사용합니다. `use_start`와 `use_end`를 함께 켜면 중점을 사용합니다. `offset`은 지정 횡거에서 횡단 링크를 보간하고, 여러 표고가 겹치면 가장 높은 점을 선택합니다.
+- `specs`를 생략하고 `standard="road"` 또는 `standard="rail"`을 사용하면 표준 코드로 추출합니다. 코드가 없는 선은 빈 결과가 됩니다. `sample_frequency`로 영역 기본 표본 간격을 덮어쓰고 `baseline_name`으로 기준선을 선택할 수 있습니다.
+- `segments`는 코드 누락, 영역 공백, 좌표가 달라지는 경계에서 선을 분리합니다. `point_at_station()`에 여러 좌표가 있는 측점을 전달하면 오류가 발생합니다. 기준선이 겹치는 경우 `baseline_name`으로 범위를 좁힐 수 있습니다.
