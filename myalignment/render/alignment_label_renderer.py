@@ -34,11 +34,11 @@ _SEGMENT_TYPES = {
 }
 
 
-def _stations(alignment, interval):
-    first = math.ceil(math.nextafter(alignment.start_station / interval, -math.inf))
-    last = math.floor(math.nextafter(alignment.end_station / interval, math.inf))
+def _stations(start, end, interval):
+    first = math.ceil(math.nextafter(start / interval, -math.inf))
+    last = math.floor(math.nextafter(end / interval, math.inf))
     return (
-        min(alignment.end_station, max(alignment.start_station, i * interval))
+        min(end, max(start, i * interval))
         for i in range(first, last + 1)
     )
 
@@ -92,12 +92,12 @@ def _hidden_fields(style):
     return frozenset(field for field, flag in options.items() if not getattr(style, flag, True))
 
 
-def _anchors(alignment, major_interval, minor_interval, render_curves, render_spirals):
+def _anchors(alignment, major_interval, minor_interval, render_curves, render_spirals, station_range):
     kind = AlignmentLabelType
     for label_type, interval in ((kind.MINOR_STATION, minor_interval), (kind.MAJOR_STATION, major_interval)):
         if alignment.label_set.get_style(label_type) is None:
             continue
-        for station in _stations(alignment, interval):
+        for station in _stations(*station_range, interval):
             if label_type is kind.MINOR_STATION and math.isclose(
                 station, round(station / major_interval) * major_interval,
                 rel_tol=0.0, abs_tol=min(interval, major_interval) * 1e-9,
@@ -209,7 +209,7 @@ def _component_primitives(component, point, azimuth, values, hidden_fields=froze
         )
 
 
-def _equation_primitives(alignment, style):
+def _equation_primitives(alignment, style, station_range):
     previous = None
     for equation in alignment.station_equations:
         raw = equation.raw_station_back
@@ -217,7 +217,7 @@ def _equation_primitives(alignment, style):
         if previous is not None:
             back = previous.station_ahead + previous.equation_type.sign * (raw - previous.raw_station_back)
         previous = equation
-        if not alignment.start_station <= raw <= alignment.end_station:
+        if not station_range[0] <= raw <= station_range[1]:
             continue
 
         point = alignment.point_at(raw)
@@ -262,6 +262,7 @@ class AlignmentLabelRenderer:
         station_offset_labels: Sequence[StationOffsetLabel] | None = None,
         reference_alignments: Mapping[str, Alignment] | None = None,
         reference_points: Mapping[str, Point2d] | None = None,
+        station_range: tuple[float, float] | None = None,
     ) -> Scene:
         """종단은 현재 STA, 참조 선형은 현재 XY의 투영점으로 조회한다."""
         major_interval = cls.MAJOR_INTERVAL if major_interval is None else major_interval
@@ -271,6 +272,14 @@ class AlignmentLabelRenderer:
                 raise ValueError("station intervals must be finite and positive")
         if not alignment.is_valid:
             return scene
+        start, end = alignment.start_station, alignment.end_station
+        if station_range is not None:
+            first, last = station_range
+            if not math.isfinite(first) or not math.isfinite(last) or first >= last:
+                raise ValueError("station_range must be finite and increasing")
+            start, end = max(start, first), min(end, last)
+            if start >= end:
+                return scene
 
         references = {
             ReferenceObjectType.SURFACE: surface,
@@ -280,8 +289,10 @@ class AlignmentLabelRenderer:
         primitives = []
         layers = {}
         for label_type, station, fields in _anchors(
-            alignment, major_interval, minor_interval, render_curves, render_spirals,
+            alignment, major_interval, minor_interval, render_curves, render_spirals, (start, end),
         ):
+            if not start <= station <= end:
+                continue
             point = alignment.point_at(station)
             azimuth = alignment.tangent_at(station)
             fields.update({
@@ -309,7 +320,7 @@ class AlignmentLabelRenderer:
 
         equation_style = alignment.label_set.equation_style
         if render_equations and equation_style is not None:
-            primitives.extend(_equation_primitives(alignment, equation_style))
+            primitives.extend(_equation_primitives(alignment, equation_style, (start, end)))
 
         for primitive in primitives:
             style = primitive.style
@@ -330,11 +341,15 @@ class AlignmentLabelRenderer:
                     geometry_style = replace(geometry_style, labeled_points=kinds)
                 labels = ProfileGeometryLabelExtractor.extract(design, geometry_style.labeled_points)
                 scene = ProfileGeometryLabelRenderer.render(
-                    scene, alignment, labels, geometry_style,
+                    scene, alignment, (label for label in labels if start <= label.station <= end), geometry_style,
                     reference_profile=profile, reference_alignment=reference_alignment, surface=surface,
                 )
 
         offsets = alignment.station_offset_labels if station_offset_labels is None else station_offset_labels
+        if station_range is not None and (start, end) != (alignment.start_station, alignment.end_station):
+            offsets = tuple(label for label in offsets if start <= (
+                label.relative_station if label.fixed_point is None else alignment.project(label.fixed_point).station
+            ) <= end)
         if offsets:
             from myalignment.render.station_offset_label_renderer import StationOffsetLabelRenderer
 

@@ -114,6 +114,8 @@ class ProfileViewRenderer:
         render_grade_breaks: bool = True,
         stagger_config: StaggerConfig | None = None,
         station_range: tuple[float, float] | None = None,
+        elevation_range: tuple[float, float] | None = None,
+        band_spacing_scale: float = 1.0,
         projections: Sequence[ProfileViewProjection] | None = None,
         hatch_style: ProfileHatchStyle | None = None,
         fg_profile_name: str | None = None,
@@ -125,6 +127,7 @@ class ProfileViewRenderer:
         수평 기하 및 캔트 밴드의 원본 선형은 alignment로 전달한다.
         depth_labels에는 두 원시 측점 사이를 측정하는 레이블을 전달한다.
         station_range를 지정하면 해당 원시 측점 구간만 그린다.
+        elevation_range는 그리드 표고 범위를 지정한다. 기하는 호출자가 자른다.
         projections에는 원시 측점과 표고로 변환한 객체를 전달한다.
         EARTHWORK 밴드의 profile_names는 계획·현황 종단의 이름을 순서대로 지정한다.
         """
@@ -132,6 +135,12 @@ class ProfileViewRenderer:
         valid_profiles = tuple(profile for profile in profiles if profile.is_valid)
         if not valid_profiles:
             return scene
+        if not math.isfinite(band_spacing_scale) or band_spacing_scale <= 0:
+            raise ValueError("band_spacing_scale must be finite and positive")
+        if elevation_range is not None and (
+            not all(map(math.isfinite, elevation_range)) or elevation_range[0] >= elevation_range[1]
+        ):
+            raise ValueError("elevation_range must be finite and increasing")
 
         window_elevations = []
         if station_range is None:
@@ -155,7 +164,7 @@ class ProfileViewRenderer:
                 clipped = region.clipped((start, end))
                 if clipped is not None:
                     window_elevations.extend(point.y for point in clipped.polygon)
-        low, high = min(window_elevations) - 5, max(window_elevations) + 5
+        low, high = elevation_range or (min(window_elevations) - 5, max(window_elevations) + 5)
         viewport = Viewport(ViewportType.PROFILE, style.vertical_exaggeration)
 
         grid = []
@@ -247,7 +256,7 @@ class ProfileViewRenderer:
                         scene, alignment, max(base, outer_edge), geometry_style,
                         style.vertical_exaggeration, station_range=(start, end),
                     )
-                    edges[location] = outer_edge + direction * (2 * geometry_style.tick_length + 1.0)
+                    edges[location] = outer_edge + direction * (2 * geometry_style.tick_length + band_spacing_scale)
                     continue
                 if band.band_type is BandType.VERTICAL_GEOMETRY:
                     profile = valid_profiles[0]
@@ -260,7 +269,7 @@ class ProfileViewRenderer:
                         scene, profile, max(base, outer_edge), vertical_style, style.vertical_exaggeration,
                         station_range=station_range,
                     )
-                    edges[location] = outer_edge + direction * (2 * vertical_style.tick_length + 1.0)
+                    edges[location] = outer_edge + direction * (2 * vertical_style.tick_length + band_spacing_scale)
                     continue
                 if band.band_type is BandType.CANT_DATA:
                     if isinstance(alignment, RailAlignment):
@@ -270,16 +279,16 @@ class ProfileViewRenderer:
                             style.vertical_exaggeration, start_station=start, end_station=end,
                         )
                         if rendered is not scene:
-                            edges[location] = outer_edge + direction * (cant_style.tick_length + 1.0)
+                            edges[location] = outer_edge + direction * (cant_style.tick_length + band_spacing_scale)
                             scene = rendered
                     continue
                 scene = scene.add_layer(Layer(cls.BAND_LAYER))
                 selected = tuple(
                     p for p in valid_profiles if not band.profile_names or p.name in band.profile_names
                 )
-                edges[location] = base + direction * 3.0
+                edges[location] = base + direction * 3.0 * band_spacing_scale
                 scene = scene.add_all(cls._band_primitives(
-                    band, selected, stations, start, end, base, direction, viewport
+                    band, selected, stations, start, end, base, direction, viewport, band_spacing_scale,
                 ))
 
         for label in labels or ():
@@ -310,7 +319,7 @@ class ProfileViewRenderer:
 
     @classmethod
     def _band_primitives(
-        cls, band, profiles, stations, start, end, base, direction, viewport,
+        cls, band, profiles, stations, start, end, base, direction, viewport, band_spacing_scale,
     ):
         style = Style(color=7, layer=cls.BAND_LAYER)
         yield Primitive.line(viewport.project(start, base), viewport.project(end, base), style)
@@ -327,6 +336,6 @@ class ProfileViewRenderer:
         exaggeration = viewport.vertical_exaggeration
         for station, text in labels:
             # TEXT의 삽입점이 하단이므로 아래 밴드는 글자 높이만큼 추가로 내린다.
-            offset = 0.5 if direction > 0 else 2.0
+            offset = (0.5 if direction > 0 else 2.0) * band_spacing_scale
             point = viewport.project(station, base + direction * offset)
-            yield Primitive.text(point, text, 1.5 * exaggeration, style=style)
+            yield Primitive.text(point, text, 1.5 * exaggeration * band_spacing_scale, style=style)

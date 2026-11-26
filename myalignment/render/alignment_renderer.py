@@ -47,9 +47,16 @@ class AlignmentRenderer:
         station_offset_labels: Sequence[StationOffsetLabel] | None = None,
         reference_alignments: Mapping[str, Alignment] | None = None,
         reference_points: Mapping[str, Point2d] | None = None,
+        station_range: tuple[float, float] | None = None,
     ) -> Scene:
         if not math.isfinite(sample_step) or sample_step <= 0:
             raise ValueError("sample_step must be finite and positive")
+        start, end = alignment.start_station, alignment.end_station
+        if station_range is not None:
+            first, last = station_range
+            if not math.isfinite(first) or not math.isfinite(last) or first >= last:
+                raise ValueError("station_range must be finite and increasing")
+            start, end = max(start, first), min(end, last)
         scene = Scene() if scene is None else scene
         styles = {}
         for component, name in cls.LAYER_MAP.items():
@@ -61,6 +68,9 @@ class AlignmentRenderer:
 
         primitives = []
         for entity in alignment.entities:
+            first, last = max(start, entity.start_station), min(end, entity.end_station)
+            if first >= last:
+                continue
             component = next(
                 (component for entity_type, component in cls._COMPONENTS.items()
                  if isinstance(entity, entity_type)),
@@ -69,49 +79,53 @@ class AlignmentRenderer:
             style = styles.get(component)
             if style is None:
                 continue
+            start_point = entity.start_coord if first == entity.start_station else entity.point_at(first)
+            end_point = entity.end_coord if last == entity.end_station else entity.point_at(last)
             if component is AlignmentComponent.LINE:
-                primitives.append(Primitive.line(entity.start_coord, entity.end_coord, style))
+                primitives.append(Primitive.line(start_point, end_point, style))
             else:
-                count = max(8, math.ceil(entity.length / sample_step))
+                length = last - first
+                count = max(8, math.ceil(length / sample_step))
                 points = [
-                    entity.point_at(entity.start_station + entity.length * i / count)
-                    for i in range(count)
+                    entity.point_at(first + length * i / count)
+                    for i in range(1, count)
                 ]
-                points.append(entity.end_coord)
-                primitives.append(Primitive.polyline(points, style=style))
+                primitives.append(Primitive.polyline((start_point, *points, end_point), style=style))
 
-        if alignment.is_valid:
+        if alignment.is_valid and start < end:
             if AlignmentComponent.ARROW in styles:
-                primitives.append(cls._render_arrow(alignment, styles[AlignmentComponent.ARROW]))
+                primitives.append(cls._render_arrow(alignment, styles[AlignmentComponent.ARROW], start))
             if AlignmentComponent.MARKER in styles:
-                markers = [entity.start_coord for entity in alignment.entities]
-                markers.append(alignment.point_at(alignment.end_station))
+                markers = [entity.start_coord for entity in alignment.entities if start <= entity.start_station <= end]
+                if end == alignment.end_station:
+                    markers.append(alignment.point_at(end))
                 primitives.extend(
                     Primitive.circle(point, 0.5, styles[AlignmentComponent.MARKER])
                     for point in markers
                 )
 
         scene = scene.add_all(primitives)
-        if render_labels:
+        if render_labels and start < end:
             scene = AlignmentLabelRenderer.render(
                 scene, alignment, surface, profile=profile, reference_alignment=reference_alignment,
                 fg_profile=fg_profile,
                 render_equations=render_equations,
                 render_curves=render_curves, render_spirals=render_spirals, station_offset_labels=station_offset_labels,
                 reference_alignments=reference_alignments, reference_points=reference_points,
+                station_range=(start, end),
             )
         scene = replace(scene, metadata={
             **scene.metadata,
             "alignment_name": alignment.name,
-            "start_station": alignment.start_station,
-            "end_station": alignment.end_station,
+            "start_station": start,
+            "end_station": end,
         })
         return StaggeredRenderer.apply_stagger(scene, stagger_config) if stagger_config is not None else scene
 
     @staticmethod
-    def _render_arrow(alignment: Alignment, style: Style) -> Primitive:
-        tip = alignment.point_at(alignment.start_station)
-        azimuth = alignment.tangent_at(alignment.start_station)
+    def _render_arrow(alignment: Alignment, style: Style, station: float) -> Primitive:
+        tip = alignment.point_at(station)
+        azimuth = alignment.tangent_at(station)
         dx, dy = math.cos(azimuth), math.sin(azimuth)
         tail_x, tail_y = tip.x - 5 * dx, tip.y - 5 * dy
         left = Point2d(tail_x - 2 * dy, tail_y + 2 * dx)
