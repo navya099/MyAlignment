@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from typing import Iterator, Self
 
@@ -9,6 +9,7 @@ from myalignment.alignment.alignment_transaction import AlignmentTransaction
 from myalignment.alignment.label_set import AlignmentLabelSet
 from myalignment.alignment.offset_station_map import OffsetStationMap
 from myalignment.alignment.station_map import StationMap
+from myalignment.alignment.station_offset_label import StationOffsetLabel
 from myalignment.alignment.station_equation import StationEquation
 from myalignment.alignment.station_equation_collection import StationEquationCollection
 from myalignment.alignment.station_equation_type import StationEquationType
@@ -59,12 +60,15 @@ class Alignment:
 
     label_set: AlignmentLabelSet = field(default_factory=AlignmentLabelSet.standard, kw_only=True)
 
+    station_offset_labels: tuple[StationOffsetLabel, ...] = field(default=(), kw_only=True)
+
     station_equations: StationEquationCollection = field(
         default_factory=StationEquationCollection, kw_only=True,
     )
 
     def __post_init__(self):
         object.__setattr__(self, "corridors", tuple(self.corridors))
+        object.__setattr__(self, "station_offset_labels", tuple(self.station_offset_labels))
 
     def raw_to_display_station(self, raw_station: float) -> float:
         return self.station_equations.raw_to_display(raw_station)
@@ -96,6 +100,14 @@ class Alignment:
 
     def with_label_set(self, label_set: AlignmentLabelSet) -> "Alignment":
         return replace(self, label_set=label_set)
+
+    def with_station_offset_labels(self, labels: Iterable[StationOffsetLabel]) -> Self:
+        """측점·횡거 레이블을 교체한 선형을 반환한다."""
+        return replace(self, station_offset_labels=tuple(labels))
+
+    def add_station_offset_label(self, label: StationOffsetLabel) -> Self:
+        """측점·횡거 레이블을 추가한 선형을 반환한다."""
+        return self.with_station_offset_labels((*self.station_offset_labels, label))
 
     def with_style(self, style: AlignmentStyle) -> "Alignment":
         """표시 스타일을 교체한 새 선형을 반환한다."""
@@ -253,6 +265,10 @@ class Alignment:
         return replace(
             self, name=name,
             corridors=tuple(corridor._rename_alignment(self.name, name) for corridor in self.corridors),
+            station_offset_labels=tuple(
+                replace(label, reference_alignment_name=name) if label.reference_alignment_name == self.name else label
+                for label in self.station_offset_labels
+            ),
         )
 
     def _map_additional_stations(self, transform: Callable[[float], float], *, reverse: bool) -> Self:

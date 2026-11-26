@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections import Counter
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
+
+from cadgeom import Point2d
 
 from myalignment.render.alignment_renderer import AlignmentRenderer
 from myalignment.render.profile_renderer import ProfileRenderer
@@ -34,6 +37,8 @@ class SceneComposer:
     def compose_alignment(
         cls, alignment: Alignment, options: RenderOptions | None = None, *,
         scene: Scene | None = None,
+        reference_alignments: Mapping[str, Alignment] | None = None,
+        reference_points: Mapping[str, Point2d] | None = None,
     ) -> Scene:
         options = options or RenderOptions()
         scene = Scene() if scene is None else scene
@@ -41,6 +46,7 @@ class SceneComposer:
             scene = AlignmentRenderer.render_plan(
                 alignment, scene, options.alignment_sample_step,
                 render_labels=options.render_alignment_labels,
+                reference_alignments=reference_alignments, reference_points=reference_points,
             )
         if options.render_profiles:
             for profile in alignment.profiles:
@@ -56,15 +62,21 @@ class SceneComposer:
 
     @classmethod
     def compose_multiple(
-        cls, alignments: Iterable[Alignment], options: RenderOptions | None = None,
+        cls, alignments: Iterable[Alignment], options: RenderOptions | None = None, *,
+        reference_points: Mapping[str, Point2d] | None = None,
     ) -> Scene:
         scene = Scene()
-        names = []
+        alignments = tuple(alignments)
+        names = tuple(alignment.name for alignment in alignments)
+        counts = Counter(names)
+        references = {alignment.name: alignment for alignment in alignments if counts[alignment.name] == 1}
         options = options or RenderOptions()
         per_alignment_options = replace(options, stagger_config=None)
         for alignment in alignments:
-            scene = cls.compose_alignment(alignment, per_alignment_options, scene=scene)
-            names.append(alignment.name)
-        scene = replace(scene, metadata={**scene.metadata, "alignment_names": tuple(names)})
+            scene = cls.compose_alignment(
+                alignment, per_alignment_options, scene=scene,
+                reference_alignments=references, reference_points=reference_points,
+            )
+        scene = replace(scene, metadata={**scene.metadata, "alignment_names": names})
         config = options.stagger_config
         return StaggeredRenderer.apply_stagger(scene, config) if config is not None else scene

@@ -9,6 +9,7 @@ from myalignment.alignment.equation_label_style import StationEquationLabelStyle
 from myalignment.alignment.label_style import AlignmentLabelStyle
 from myalignment.alignment.label_type import AlignmentLabelType
 from myalignment.alignment.spiral_label_style import SpiralLabelStyle
+from myalignment.alignment.station_offset_label_style import StationOffsetLabelStyle
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +20,7 @@ class AlignmentLabelSet:
     styles: Mapping[AlignmentLabelType, AlignmentLabelStyle] = field(default_factory=dict, hash=False)
 
     equation_style: StationEquationLabelStyle | None = None
+    station_offset_style: StationOffsetLabelStyle | None = None
 
     def __post_init__(self):
         styles = dict(self.styles)
@@ -34,6 +36,10 @@ class AlignmentLabelSet:
 
     def with_equation_style(self, style: StationEquationLabelStyle | None) -> AlignmentLabelSet:
         return replace(self, equation_style=style)
+
+    def with_station_offset_style(self, style: StationOffsetLabelStyle | None) -> AlignmentLabelSet:
+        """측점·횡거 레이블에 적용할 기본 스타일을 설정한다."""
+        return replace(self, station_offset_style=style)
 
     @property
     def curve_style(self) -> AlignmentLabelStyle | None:

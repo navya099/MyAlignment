@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 import math
 from typing import TYPE_CHECKING
@@ -18,6 +19,7 @@ from myalignment.render.staggered_renderer import StaggeredRenderer
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
+    from myalignment.alignment.station_offset_label import StationOffsetLabel
     from myalignment.profile.profile import Profile
     from myalignment.surface.tin_surface import TinSurface
 
@@ -41,6 +43,9 @@ class AlignmentRenderer:
         stagger_config: StaggerConfig | None = None,
         render_curves: bool = True,
         render_spirals: bool = True,
+        station_offset_labels: Sequence[StationOffsetLabel] | None = None,
+        reference_alignments: Mapping[str, Alignment] | None = None,
+        reference_points: Mapping[str, Point2d] | None = None,
     ) -> Scene:
         if not math.isfinite(sample_step) or sample_step <= 0:
             raise ValueError("sample_step must be finite and positive")
@@ -90,7 +95,8 @@ class AlignmentRenderer:
             scene = AlignmentLabelRenderer.render(
                 scene, alignment, surface, profile=profile, reference_alignment=reference_alignment,
                 render_equations=render_equations,
-                render_curves=render_curves, render_spirals=render_spirals,
+                render_curves=render_curves, render_spirals=render_spirals, station_offset_labels=station_offset_labels,
+                reference_alignments=reference_alignments, reference_points=reference_points,
             )
         scene = replace(scene, metadata={
             **scene.metadata,

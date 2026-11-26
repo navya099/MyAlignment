@@ -124,3 +124,34 @@ DxfWriter(scene).write("curve-spiral-labels.dxf")
 `angle_format`은 `dms` 또는 `decimal`을 사용합니다. 레이블의 측점에는 측점 방정식이 적용됩니다. `CurveSpiralExtractor`는 원시 측점과 라디안 각도, 완화곡선 시작 접선 좌표계의 끝점 `x`, `y`를 반환합니다. A 값은 클로소이드에 해당하며, 적용할 수 없는 제원이나 전이 측점은 대시로 표시됩니다.
 
 `render_curves=False`와 `render_spirals=False`로 해당 유형의 중앙 제원 레이블을 숨길 수 있습니다. 겹침 방지는 `stagger_config=`로 설정합니다. 기존 장면에 한 유형만 추가하려면 `CurveLabelRenderer.render()` 또는 `SpiralLabelRenderer.render()`를 사용합니다.
+
+## 측점·횡거 레이블
+
+`StationOffsetLabel`은 고정 XY 또는 원시 측점과 횡거에 배치합니다. 고정점은 선형을 수정해도 XY를 유지하며 새 선형에 투영해 값을 다시 계산합니다. 상대점은 지정한 원시 측점과 횡거를 유지하며 선형과 함께 움직입니다. 횡거는 진행 방향 기준 왼쪽이 음수, 오른쪽이 양수입니다.
+
+```python
+from cadgeom import Point2d
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.alignment.station_offset_label import StationOffsetLabel
+from myalignment.alignment.station_offset_label_style import StationOffsetLabelStyle
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.render.alignment_renderer import AlignmentRenderer
+
+axis = (
+    AlignmentBuilder("Main").with_pi_coords([(0, 0), (100, 0)]).build()
+    .add_station_equation(20, 200)
+)
+relative = StationOffsetLabel(relative_station=30, relative_offset=5)
+fixed = StationOffsetLabel(
+    label_style=StationOffsetLabelStyle.offset_only(),
+    fixed_point=Point2d(45, 6),
+)
+axis = axis.with_station_offset_labels([relative, fixed])
+assert relative.evaluate(axis)["Station Value"] == "210.00"
+scene = AlignmentRenderer.render_plan(axis, render_labels=True)
+DxfWriter(scene).write("station-offset-labels.dxf")
+```
+
+- 템플릿의 `<[Station Value]>`는 측점 방정식을 적용한 표시 측점이고 `<[Raw Station]>`은 원시 측점입니다. `Easting`과 `Northing`은 표식기 좌표입니다. 선형 위 투영점 좌표는 `Alignment Easting`과 `Alignment Northing`을 사용합니다.
+- 다른 선형을 참조하려면 `reference_alignment_name`을 설정하고 `render_plan(reference_alignments=...)`에 이름별 선형을 전달합니다. `Ref Station`, `Ref Raw Station`, `Ref Offset`, `Ref Alignment Name` 필드를 사용할 수 있습니다. 측량점은 `reference_point_name`과 `reference_points`로 전달합니다. 템플릿에서 참조를 찾을 수 없으면 `???`로 표시합니다.
+- 공통 스타일은 `AlignmentLabelSet.with_station_offset_style()`로 지정합니다. 개별 레이블의 `label_style`이 공통 스타일보다 우선합니다. `render_plan(station_offset_labels=...)`로 출력할 레이블을 임시 지정할 수 있습니다. 현재 선형 범위 밖의 상대 레이블은 일괄 출력에서 생략합니다.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 import math
 import re
 from typing import TYPE_CHECKING
@@ -19,6 +20,7 @@ from myalignment.render.scene import Layer, Scene
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
+    from myalignment.alignment.station_offset_label import StationOffsetLabel
     from myalignment.profile.profile import Profile
     from myalignment.surface.tin_surface import TinSurface
 
@@ -255,6 +257,9 @@ class AlignmentLabelRenderer:
         major_interval: float | None = None, minor_interval: float | None = None,
         render_equations: bool = True,
         render_curves: bool = True, render_spirals: bool = True,
+        station_offset_labels: Sequence[StationOffsetLabel] | None = None,
+        reference_alignments: Mapping[str, Alignment] | None = None,
+        reference_points: Mapping[str, Point2d] | None = None,
     ) -> Scene:
         """종단은 현재 STA, 참조 선형은 현재 XY의 투영점으로 조회한다."""
         major_interval = cls.MAJOR_INTERVAL if major_interval is None else major_interval
@@ -309,4 +314,14 @@ class AlignmentLabelRenderer:
             layers.setdefault(style.layer, Layer(style.layer, color=style.color))
         for layer in layers.values():
             scene = scene.add_layer(layer)
-        return scene.add_all(primitives) if primitives else scene
+        if primitives:
+            scene = scene.add_all(primitives)
+        offsets = alignment.station_offset_labels if station_offset_labels is None else station_offset_labels
+        if offsets:
+            from myalignment.render.station_offset_label_renderer import StationOffsetLabelRenderer
+
+            scene = StationOffsetLabelRenderer.render_multiple(
+                scene, offsets, alignment, reference_alignment,
+                reference_alignments=reference_alignments, reference_points=reference_points,
+            )
+        return scene
