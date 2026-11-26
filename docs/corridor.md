@@ -525,3 +525,35 @@ DxfWriter(PipeNetworkRenderer.render_plan(Scene(), network)).write("pipe-network
 - 토피는 TIN 표고에서 외측 관정고를 뺀 값입니다. `min_cover`는 표고를 확인한 관 끝점의 최소값이며 미확인 상태는 `None`입니다. 관 중간의 토피는 별도 검토가 필요합니다. 유효성 검사는 기본값으로 최소 구배 0.5%와 끝점 토피 0.6m를 사용합니다. 참조 지표면을 지정했는데 끝점 표고를 확인할 수 없으면 검사 결과에 기록합니다.
 - `PipePart`에서 재질·단면 형상·두께를 지정합니다. 비원형 관은 `diameter_mm`을 내측 수직 높이로 사용하며, `width_mm`으로 내측 폭을 따로 지정할 수 있습니다. `with_parts_list()`에는 프로젝트 부품 목록 이름을 참조로 저장합니다.
 - `PipeNetwork3DRenderer.render()`는 관저고 경로와 구조물 림을 와이어프레임으로 그립니다. 종단 뷰의 `projections=`에는 `PipeNetworkRenderer.profile_projections(network, axis)`가 반환한 관 중심선 투영을 전달합니다.
+
+## 압력관망
+
+`PressureNetworkBuilder`는 관 중심선의 3D 좌표로 직선 관을 만들고 피팅과 부속품을 연결합니다. 관 끝의 피팅·부속품 ID를 지정하거나, 피팅·부속품에서 `connected_pipe_ids`를 지정합니다. 후자의 경우 같은 3D 위치에 있는 관 끝을 찾습니다. 분기에는 티·크로스, 관경 전환에는 리듀서, 차단이나 계량에는 밸브·계량기를 사용할 수 있습니다.
+
+```python
+from myalignment.export.dxf_3d_writer import Dxf3DWriter
+from myalignment.pressure import PressureNetworkBuilder, PressureNetworkValidator
+from myalignment.render.pressure_network_renderer import PressureNetwork3DRenderer
+from myalignment.render.primitives_3d import Point3D
+from myalignment.surface.tin_surface import TinSurface
+
+a, b, c = Point3D(0, 0, 8), Point3D(20, 0, 8), Point3D(20, 10, 8)
+ground = TinSurface.from_points([(-2, -2, 10), (22, -2, 10), (22, 12, 10), (-2, 12, 10)])
+network = (
+    PressureNetworkBuilder("Water")
+    .with_surface(ground)
+    .add_bend(b, angle_deg=90, connected_pipe_ids=("PP_000", "PP_001"))
+    .add_pipe_run(a, b, diameter_mm=150)
+    .add_pipe_run(b, c, diameter_mm=150)
+    .build()
+)
+assert PressureNetworkValidator.is_valid(network)
+assert network.total_pipe_length == 30
+assert round(network.min_cover, 3) == 1.915
+Dxf3DWriter(PressureNetwork3DRenderer.render(network)).write("pressure-network.dxf")
+```
+
+- 빌더의 관 ID는 `PP_000`, 피팅 ID는 `PF_000`, 부속품 ID는 `PA_000`부터 각각 생성됩니다. 관별로 `start_fitting_id`, `end_fitting_id`, `start_appurtenance_id`, `end_appurtenance_id`를 사용할 수 있습니다. 부품 없이 끝나는 관 끝은 연결을 생략합니다.
+- 토피는 TIN 지표 표고에서 관 중심 표고와 외측 반지름의 합을 뺀 값입니다. 관의 평면 경로를 덮는 모든 TIN 삼각형을 검사하며, 지표면 범위에 빈 구간이 있으면 해당 관의 토피는 `None`입니다.
+- 기본 검사 기준은 최소 3D 관 길이 1m, 최소 토피 0.9m, 최대 편향각 11.25°입니다. 엘보의 편향각은 관 축의 실제 3D 전환각과 엘보의 공칭각 사이의 차이입니다. 연결 포트 수, 공칭경과 관의 압력 등급도 확인합니다.
+- `PressureNetworkRenderer.render_plan()`으로 평면도를 만들고, `profile_projections(network, alignment)`로 종단 뷰에 전달할 관 중심선을 얻습니다. 부품 목록과 참조 선형은 프로젝트 참조 이름으로 저장합니다.
