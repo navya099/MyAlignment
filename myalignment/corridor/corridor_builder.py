@@ -1,6 +1,7 @@
 # corridor/corridor_builder.py
 from __future__ import annotations
 
+from collections.abc import Callable
 import math
 from typing import TYPE_CHECKING, Self
 
@@ -13,6 +14,7 @@ from myalignment.target.mapping import TargetMapping
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
+    from myalignment.assembly.section_context import SectionContext
     from myalignment.profile.profile import Profile
 
 
@@ -34,6 +36,7 @@ class CorridorBuilder:
             *,
             cant_curve: CantCurve | None = None,
         baseline_name: str | None = None,
+        context_provider: Callable[[float], SectionContext] | None = None,
     ) -> "CorridorBuilder":
         self._regions.append(
             CorridorRegion(
@@ -45,6 +48,7 @@ class CorridorBuilder:
                 target_mapping=targets or TargetMapping.empty(),
                 cant_curve=cant_curve,
                 baseline_name=baseline_name,
+                context_provider=context_provider,
             )
         )
         return self
@@ -117,10 +121,11 @@ class CorridorBuilder:
         frequency: float = 10.0,
         *,
         baseline_name: str | None = None,
+        context_provider: Callable[[float], SectionContext] | None = None,
     ) -> "CorridorBuilder":
         return self.add_region_with_assembly(
             name, start_station, end_station, assembly, frequency,
-            baseline_name=baseline_name,
+            baseline_name=baseline_name, context_provider=context_provider,
         )
 
     def build(self) -> Corridor:

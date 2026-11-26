@@ -4,7 +4,7 @@ from collections import defaultdict
 import math
 from typing import TYPE_CHECKING
 
-from myalignment.corridor.corridor_mesh import CorridorMesh, check_section_topology
+from myalignment.corridor.corridor_mesh import CorridorMesh, check_section_topology, same_section_topology
 from myalignment.corridor.cross_section_3d import CrossSection3D
 from myalignment.render.primitives_3d import Primitive3D, Style3D
 from myalignment.render.scene_3d import Scene3D
@@ -30,7 +30,7 @@ class Corridor3DRenderer:
     ) -> Scene3D:
         primitives = []
         longitudinal = Style3D(color=8, lineweight=0.15, layer="C-CORRIDOR-LONGITUDINAL")
-        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile):
+        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile, split_conditional=True):
             primitives.extend(cls._cross_links(sections))
             for first, second in zip(sections, sections[1:]):
                 check_section_topology(first, second)
@@ -54,7 +54,7 @@ class Corridor3DRenderer:
         offset_elevation: float = 0.0, *, profile: Profile | None = None,
     ) -> Scene3D:
         primitives = []
-        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile):
+        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile, split_conditional=True):
             mesh = CorridorMesh.from_sections(sections)
             groups = defaultdict(list)
             for triangle, code in zip(mesh.triangles, mesh.face_codes):
@@ -83,7 +83,7 @@ def _indexed_mesh(vertices, faces, style):
     )
 
 
-def _sections(corridor, alignment, frequency, offset, profile, *, baseline_name=None):
+def _sections(corridor, alignment, frequency, offset, profile, *, baseline_name=None, split_conditional=False):
     if frequency is not None and (not math.isfinite(frequency) or frequency <= 0):
         raise ValueError("sample_frequency must be finite and positive")
     if not math.isfinite(offset):
@@ -109,10 +109,16 @@ def _sections(corridor, alignment, frequency, offset, profile, *, baseline_name=
                     raise ValueError(f"Missing profile: {baseline.profile_name}")
 
         stations = region.sample_stations(frequency)
-        yield [
-            CrossSection3D.from_region(
-                alignment, station, region,
-                offset + (grade.elevation_at(station) if grade is not None else 0.0),
+        conditional = region.assembly.has_conditional
+        sections = []
+        for station in stations:
+            elevation = grade.elevation_at(station) if grade is not None else None
+            section = CrossSection3D.from_region(
+                alignment, station, region, offset + (elevation if elevation is not None else 0.0),
+                design_elevation=elevation, grade=grade.grade_at(station) if grade is not None and conditional else None,
             )
-            for station in stations
-        ]
+            if split_conditional and conditional and sections and not same_section_topology(sections[-1], section):
+                yield sections
+                sections = []
+            sections.append(section)
+        yield sections

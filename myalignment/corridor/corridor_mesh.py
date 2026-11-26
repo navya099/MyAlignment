@@ -8,10 +8,14 @@ from myalignment.corridor.cross_section_3d import CrossSection3D
 from myalignment.render.primitives_3d import Point3D
 
 
-def check_section_topology(first: CrossSection3D, second: CrossSection3D) -> None:
-    if (len(first.points), first.links, first.point_codes, first.link_codes) != (
+def same_section_topology(first: CrossSection3D, second: CrossSection3D) -> bool:
+    return (len(first.points), first.links, first.point_codes, first.link_codes) == (
         len(second.points), second.links, second.point_codes, second.link_codes,
-    ):
+    )
+
+
+def check_section_topology(first: CrossSection3D, second: CrossSection3D) -> None:
+    if not same_section_topology(first, second):
         raise ValueError(f"Cross-section topology changes between stations {first.station} and {second.station}")
 
 

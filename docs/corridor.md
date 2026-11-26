@@ -308,3 +308,41 @@ Corridor3DMeshPreview.preview(
 ```
 
 같은 선형을 여러 기준선에서 쓰면 `baseline_name`으로 범위를 지정합니다. `profile`은 기준선의 종단을 덮어쓰며, `z_offset`은 모든 점의 표고에 더합니다. HTML 미리보기는 기존 Three.js 뷰어를 사용하고, DXF의 메시 면은 `3DFACE`로 저장됩니다.
+
+## 조건부 서브어셈블리
+
+`ConditionalSubassembly`는 현재 배치 접점에서 조건을 순서대로 평가하고 처음 참인 분기의 형상을 사용합니다. 참인 조건이 없으면 마지막 `else` 분기가 적용됩니다. 표준 도로 어셈블리는 `ConditionalAssemblyFactory.road_with_cut_fill()` 또는 `road_with_drainage()`로 생성합니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.assembly.codes import LinkCode
+from myalignment.assembly.conditional.factory import ConditionalAssemblyFactory
+from myalignment.assembly.section_context import SectionContext
+from myalignment.corridor.corridor_builder import CorridorBuilder
+from myalignment.profile.profile import ProfileBuilder
+from myalignment.surface.tin_surface import TinSurface
+from myalignment.target.mapping import TargetMapping
+from myalignment.target.reference import TargetReference
+
+grade = ProfileBuilder("Grade").add_tangent(0, 40, 10, 10).build()
+axis = AlignmentBuilder("Main").with_pi_coords([(0, 0), (40, 0)]).with_profile(grade).build()
+ground = TinSurface.from_points([(0, -6, 12), (40, -6, 12), (40, 6, 8), (0, 6, 8)])
+targets = TargetMapping((TargetReference("TargetDTM", object_name="Ground"),))
+
+def context_at(station):
+    return SectionContext.from_alignment(axis, station, profile=grade, surfaces={"Ground": ground})
+
+assembly = ConditionalAssemblyFactory.road_with_cut_fill()
+corridor = (
+    CorridorBuilder("Road").add_baseline_from_alignment(axis, grade)
+    .add_region_with_assembly("Road", 0, 40, assembly, targets=targets, context_provider=context_at)
+    .build()
+)
+_, links = corridor.cross_section_at(10)
+assert sum(link.code is LinkCode.DITCH for link in links) == 2
+```
+
+- 절토·성토는 **원지반 표고 − 설계 접점 표고**로 판정합니다. 차로 끝의 좌우 횡거에서 각각 TIN을 조회합니다. 표면 범위 밖에서는 지정한 고정 지표면 표고를 사용하며, 그 값도 없으면 해당 조건은 거짓입니다.
+- 구배 조건의 단위는 소수 비율입니다. 표준 배수 어셈블리는 종단 구배의 절댓값이 0.02를 넘으면 배수로를 배치합니다. 사용자 조건은 `context_key`로 좁히고 `SectionContext.values`에 추가 값을 전달할 수 있습니다.
+- 수평 타깃은 `target_offsets`에 실제 객체 이름과 부호 있는 횡거를 전달합니다. `TARGET_REACHED`는 같은 쪽에서 현재 접점이 목표 횡거에 도달했는지 확인합니다. `slope_to_surface()`는 표고차에 따라 미리 설정한 사면 또는 평탄 형상을 선택합니다.
+- 링크 기반 3D 메시와 사각 스트립은 조건 변경으로 횡단 연결 구조가 달라지는 지점에서 구간을 나눕니다. 평면선형의 위치가 바뀌는 편집 후에는 기존 선형을 참조하는 컨텍스트 공급자를 새 선형에 맞춰 갱신합니다.

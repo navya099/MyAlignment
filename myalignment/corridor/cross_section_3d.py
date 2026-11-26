@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 import math
 from typing import TYPE_CHECKING
 
+from myalignment.assembly.section_context import SectionContext
 from myalignment.render.primitives_3d import Point3D
 
 if TYPE_CHECKING:
@@ -37,16 +38,26 @@ class CrossSection3D:
     @classmethod
     def from_assembly(
         cls, alignment: Alignment, station: float, assembly: Assembly,
-        target_mapping: TargetMapping | None = None, offset_elevation: float = 0.0,
+        target_mapping: TargetMapping | None = None, offset_elevation: float = 0.0, *,
+        context: SectionContext | None = None,
     ) -> CrossSection3D:
-        points, links = assembly.generate_cross_section(target_mapping)
+        if assembly.has_conditional:
+            context = replace(context, station=station) if context is not None else SectionContext(station=station)
+            points, links = assembly.generate_cross_section(target_mapping, context=context)
+        else:
+            points, links = assembly.generate_cross_section(target_mapping)
         return cls._from_local(alignment, station, points, links, offset_elevation)
 
     @classmethod
     def from_region(
-        cls, alignment: Alignment, station: float, region: CorridorRegion, offset_elevation: float = 0.0,
+        cls, alignment: Alignment, station: float, region: CorridorRegion, offset_elevation: float = 0.0, *,
+        design_elevation: float | None = None, grade: float | None = None,
     ) -> CrossSection3D:
-        points, links = region.cross_section_at(station)
+        if region.assembly.has_conditional and region.context_provider is None:
+            context = SectionContext(station, design_elevation, grade)
+            points, links = region.cross_section_at(station, context=context)
+        else:
+            points, links = region.cross_section_at(station)
         return cls._from_local(alignment, station, points, links, offset_elevation)
 
     @classmethod

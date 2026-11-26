@@ -13,6 +13,7 @@ from myalignment.target.reference import TargetObjectType
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
+    from myalignment.assembly.section_context import SectionContext
     from myalignment.corridor.feature_line_spec import CorridorFeatureLineSpec
     from myalignment.corridor.rehab.edit_command import CorridorEditCommand
     from myalignment.corridor.rehab.transaction import CorridorTransaction
@@ -154,6 +155,7 @@ class Corridor:
 
     def _map_alignment_stations(
         self, alignment_name: str, transform: Callable[[float], float], *, reverse: bool,
+        inverse: Callable[[float], float], grade_scale: Callable[[float], float],
     ) -> "Corridor":
         if self.baselines and all(baseline.alignment_name != alignment_name for baseline in self.baselines):
             return self
@@ -164,6 +166,7 @@ class Corridor:
 
         regions = []
         affected = False
+        providers = {}
         for region in self.regions:
             baseline = self.baseline_for_region(region)
             name = region.baseline_name
@@ -173,8 +176,15 @@ class Corridor:
             if baseline is None or baseline.alignment_name == alignment_name:
                 affected = True
                 cant = region.cant_curve
+                provider = region.context_provider
+                if provider is not None:
+                    key = id(provider)
+                    if key not in providers:
+                        providers[key] = _remap_context_provider(provider, inverse, grade_scale)
+                    provider = providers[key]
                 region = replace(
                     map_range(region), baseline_name=name, _mirrored=region._mirrored ^ reverse,
+                    context_provider=provider,
                     cant_curve=cant._map_stations(transform, reverse=reverse) if cant is not None else None,
                 )
             elif name != region.baseline_name:
@@ -321,12 +331,13 @@ class Corridor:
 
     def cross_section_at(
         self, station: float, *, alignment_name: str | None = None, baseline_name: str | None = None,
+        context: SectionContext | None = None,
     ) -> tuple[tuple, tuple]:
         """측점의 횡단면."""
         region = self.region_at(station, alignment_name=alignment_name, baseline_name=baseline_name)
         if region is None:
             return (), ()
-        return region.cross_section_at(station)
+        return region.cross_section_at(station) if context is None else region.cross_section_at(station, context=context)
 
     def sample_cross_sections(
         self, *, alignment_name: str | None = None, baseline_name: str | None = None,
@@ -343,3 +354,12 @@ class Corridor:
                 owners[sta] = baseline
                 result[sta] = region.cross_section_at(sta)
         return result
+
+
+def _remap_context_provider(provider, inverse, grade_scale):
+    def mapped(station):
+        context = provider(inverse(station))
+        grade = context.grade * grade_scale(station) if context.grade is not None else None
+        return replace(context, station=station, grade=grade)
+
+    return mapped

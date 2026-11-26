@@ -206,7 +206,10 @@ class Alignment:
                 for equation in self.station_equations
             )),
         )
-        return self._with_mapped_dependencies(result, stations.forward, reverse=False)
+        return self._with_mapped_dependencies(
+            result, stations.forward, reverse=False, inverse=stations.backward,
+            grade_scale=lambda station: stations.inverse_rate(station, outgoing=station < result.end_station),
+        )
 
     def reversed_alignment(self) -> Self:
         """평면 기하 및 연결 객체의 측점과 횡단 방향을 반전한다."""
@@ -221,10 +224,13 @@ class Alignment:
             superelevation=self.superelevation._reversed_about(station_sum),
             station_equations=self.station_equations.reversed(self.start_station, self.end_station),
         )
-        return self._with_mapped_dependencies(result, reflect, reverse=True)
+        return self._with_mapped_dependencies(
+            result, reflect, reverse=True, inverse=reflect, grade_scale=lambda _: -1.0,
+        )
 
     def _with_mapped_dependencies(
         self, result: Self, transform: Callable[[float], float], *, reverse: bool,
+        inverse: Callable[[float], float], grade_scale: Callable[[float], float],
     ) -> Self:
         structures = []
         for item in self.structures:
@@ -233,7 +239,9 @@ class Alignment:
         result = replace(
             result, structures=StructureCollection(tuple(sorted(structures, key=lambda item: item.start_station))),
             corridors=tuple(
-                corridor._map_alignment_stations(self.name, transform, reverse=reverse)
+                corridor._map_alignment_stations(
+                    self.name, transform, reverse=reverse, inverse=inverse, grade_scale=grade_scale,
+                )
                 for corridor in self.corridors
             ),
         )

@@ -1,6 +1,6 @@
 # assembly/subassemblies/side_slope.py
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from myalignment.assembly.codes import PointCode, LinkCode, ShapeCode
 from myalignment.assembly.link import AssemblyLink
@@ -23,6 +23,7 @@ class SideSlope(Subassembly):
     height: float = 5.0  # 사면 높이 (m)
     side: int = 1
     _target_parameters: tuple[str, ...] = ("TargetDTM",)
+    is_cut: bool = field(default=False, kw_only=True)
 
     def __post_init__(self):
         if self.slope_ratio <= 0:
@@ -40,7 +41,7 @@ class SideSlope(Subassembly):
         end = AssemblyPoint(
             code=PointCode.CATCH_POINT,
             x=self.slope_ratio * self.height,
-            z=-self.height,
+            z=self.height if self.is_cut else -self.height,
             is_parametric=is_parametric,
         )
         link = AssemblyLink(code=LinkCode.SLOPE, start=start, end=end)

@@ -1,12 +1,17 @@
 # assembly/assembly.py
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING
 
 from myalignment.assembly.codes import PointCode
 from myalignment.assembly.link import AssemblyLink
 from myalignment.assembly.point import AssemblyPoint
 from myalignment.assembly.subassembly import Subassembly
 from myalignment.target.mapping import TargetMapping
+
+if TYPE_CHECKING:
+    from myalignment.assembly.conditional.conditional_subassembly import ConditionalSubassembly
+    from myalignment.assembly.section_context import SectionContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,9 +29,19 @@ class Assembly:
 
     center_subassembly: Subassembly | None = None
 
+    @property
+    def has_conditional(self) -> bool:
+        """조건부 배치가 있는지 확인한다."""
+        from myalignment.assembly.conditional.conditional_subassembly import ConditionalSubassembly
+
+        return any(isinstance(sub, ConditionalSubassembly) for sub in (
+            self.center_subassembly, *self.left_subassemblies, *self.right_subassemblies,
+        ))
+
     def generate_cross_section(
             self,
-            target_mapping: TargetMapping | None = None,
+            target_mapping: TargetMapping | None = None, *,
+            context: SectionContext | None = None,
             ) -> tuple[tuple[AssemblyPoint, ...], tuple[AssemblyLink, ...]]:
         """
         어셈블리 전체의 횡단면 생성 (로컬 좌표).
@@ -43,8 +58,8 @@ class Assembly:
 
         left_origin = right_origin = (0.0, 0.0)
         if self.center_subassembly is not None:
-            points, links = self.center_subassembly.place_at(
-                0.0, 0.0, side_sign=1, target_mapping=target_mapping
+            points, links = self.center_subassembly._place_with_context(
+                0.0, 0.0, 1, target_mapping, context
             )
             for point in points:
                 if not self._point_exists(all_points, point):
@@ -63,7 +78,8 @@ class Assembly:
             origin=right_origin,
             points=all_points,
             links=all_links,
-            target_mapping=target_mapping
+            target_mapping=target_mapping,
+            context=context,
         )
 
         # 좌측 배치 (side=-1)
@@ -73,7 +89,8 @@ class Assembly:
             origin=left_origin,
             points=all_points,
             links=all_links,
-            target_mapping=target_mapping
+            target_mapping=target_mapping,
+            context=context,
         )
 
         return tuple(all_points), tuple(all_links)
@@ -86,15 +103,13 @@ class Assembly:
             points: list,
             links: list,
             target_mapping: TargetMapping | None,
+            context: SectionContext | None,
     ):
         current_x, current_z = origin
 
         for sub in subassemblies:
-            placed_points, placed_links = sub.place_at(
-                origin_x=current_x,
-                origin_z=current_z,
-                side_sign=side_sign,
-                target_mapping=target_mapping
+            placed_points, placed_links = sub._place_with_context(
+                current_x, current_z, side_sign, target_mapping, context,
             )
 
             for p in placed_points:
@@ -151,6 +166,20 @@ class AssemblyBuilder:
         """좌/우 대칭 서브어셈블리 추가 (factory 함수)."""
         self._right.append(sub_factory(side=+1))
         self._left.append(sub_factory(side=-1))
+        return self
+
+    def add_conditional(self, side: str, conditional: ConditionalSubassembly) -> AssemblyBuilder:
+        """조건부 서브어셈블리를 좌측, 우측 또는 양쪽에 추가한다."""
+        from myalignment.assembly.conditional.conditional_subassembly import ConditionalSubassembly
+
+        if side not in ("left", "right", "both"):
+            raise ValueError("side must be left, right, or both")
+        if not isinstance(conditional, ConditionalSubassembly):
+            raise TypeError("conditional must be a ConditionalSubassembly")
+        if side in ("left", "both"):
+            self.add_left(replace(conditional, side=-1))
+        if side in ("right", "both"):
+            self.add_right(replace(conditional, side=1))
         return self
 
     def build(self) -> Assembly:

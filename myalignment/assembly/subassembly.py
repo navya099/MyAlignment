@@ -38,6 +38,9 @@ class Subassembly(ABC):
         """
         ...
 
+    def _place_with_context(self, origin_x, origin_z, side_sign, target_mapping, context):
+        return self.place_at(origin_x, origin_z, side_sign=side_sign, target_mapping=target_mapping)
+
     def place_at(
             self,
             origin_x: float,

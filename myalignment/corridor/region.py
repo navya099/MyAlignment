@@ -1,10 +1,12 @@
 # corridor/region.py
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
+from collections.abc import Callable
 import math
 
 from myalignment.assembly.assembly import Assembly
 from myalignment.assembly.codes import PointCode
+from myalignment.assembly.section_context import SectionContext
 from myalignment.cant.curve import CantCurve, CantPivotMethod
 from myalignment.target.mapping import TargetMapping
 
@@ -25,6 +27,7 @@ class CorridorRegion:
     # Region에 CantCurve 참조 (선택)
     cant_curve: CantCurve | None = None
     baseline_name: str | None = field(default=None, kw_only=True)
+    context_provider: Callable[[float], SectionContext] | None = field(default=None, kw_only=True, repr=False)
     _mirrored: bool = field(default=False, repr=False, kw_only=True)
 
     def __post_init__(self):
@@ -55,8 +58,14 @@ class CorridorRegion:
         stations.append(self.end_station)
         return stations
 
-    def cross_section_at(self, station: float):
-        points, links = self.assembly.generate_cross_section(self.target_mapping)
+    def cross_section_at(self, station: float, *, context: SectionContext | None = None):
+        if self.assembly.has_conditional:
+            if context is None and self.context_provider is not None:
+                context = self.context_provider(station)
+            context = replace(context, station=station) if context is not None else SectionContext(station=station)
+            points, links = self.assembly.generate_cross_section(self.target_mapping, context=context)
+        else:
+            points, links = self.assembly.generate_cross_section(self.target_mapping)
         if self._mirrored:
             rail_codes = {
                 PointCode.LEFT_RAIL: PointCode.RIGHT_RAIL,
