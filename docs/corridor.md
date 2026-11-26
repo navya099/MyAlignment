@@ -8,7 +8,41 @@
 | `Shoulder` | `assembly.subassemblies.shoulder` | 폭, 경사 |
 | `SideSlope` | `assembly.subassemblies.side_slope` | 사면비, 높이 |
 | `VShapeDitch` | `assembly.subassemblies.ditch` | 폭, 깊이 |
+| `CurbSubassembly` | `assembly.subassemblies.curb` | 연석 유형, 높이, 폭, 구배 |
+| `SidewalkSubassembly` | `assembly.subassemblies.sidewalk` | 폭, 구배, 두께 |
+| `CurbAndSidewalkSubassembly` | `assembly.subassemblies.curb_and_sidewalk` | 연석과 보도 제원 |
+| `CurbAndGutterSubassembly` | `assembly.subassemblies.curb_and_gutter` | 연석 제원, 측구 폭과 깊이 |
 | `SingleTrack` | `assembly.subassemblies.rail_track` | 궤간, 도상 깊이 |
+
+## 연석·측구·보도
+
+`CurbSidewalkFactory.urban_road()`는 양쪽에 차로, 갓길, 연석·보도, 사면을 차례로 배치합니다. `lane_count`는 한쪽 차로 수입니다. `urban_road_with_drainage()`는 양쪽 차로와 연석 사이에 V형 배수로를 배치합니다.
+
+```python
+from myalignment.assembly.codes import PointCode
+from myalignment.assembly.subassemblies import CurbSidewalkFactory
+from myalignment.corridor.corridor_builder import CorridorBuilder
+from myalignment.quantity.material import Material
+from myalignment.quantity.takeoff import QuantityTakeoff
+
+assembly = CurbSidewalkFactory.urban_road(lane_count=1, sidewalk_width=2.0)
+corridor = (
+    CorridorBuilder("Urban Road")
+    .add_region("Road", 0, 100, assembly, frequency=10)
+    .build()
+)
+points, _ = corridor.cross_section_at(50)
+outside = [p.x for p in points if p.code is PointCode.SIDEWALK_OUT]
+assert sorted(round(offset, 2) for offset in outside) == [-6.15, 6.15]
+
+takeoff = QuantityTakeoff([Material("Sidewalk concrete", "SIDEWALK")])
+quantity, = takeoff.compute(corridor, list(corridor.regions)).material_quantities
+assert round(quantity.total_quantity, 2) == 40.0
+```
+
+- 개별 부품은 `AssemblyBuilder`에 추가합니다. 연석 다음 부품은 연석 후면 하단에, 보도 다음 부품은 보도 외측 포장 상단에 연결됩니다. 통합 부품에 `SidewalkParams(include_curb=False)`를 전달하면 보도만 생성합니다.
+- `CurbType`은 수직·경사·마운터블·방호형의 기본 전면 형상을 제공합니다. `CurbParams.face_slope`를 지정하면 전면 높이 1m당 바깥쪽 수평 이동량을 직접 제어할 수 있습니다. `top_slope`와 보도의 `slope`는 바깥쪽으로 향하는 구배입니다.
+- 차로 끝에서 연석 전면까지 내려가는 단일 측구는 `CurbAndGutterSubassembly`를 사용합니다. `gutter_depth`는 차로 끝과 측구 최저점의 표고차입니다.
 
 ## 여러 기준선에서 영역 선택하기
 

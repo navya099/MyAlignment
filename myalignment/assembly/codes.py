@@ -23,6 +23,12 @@ class PointCode(Enum):
     DITCH_INNER = "DitchInner"
     DITCH_OUTER = "DitchOuter"
     DITCH_BOTTOM = "DitchBottom"
+    # 연석과 보도
+    CURB_FACE = "CurbFace"
+    CURB_TOP = "CurbTop"
+    CURB_BACK = "CurbBack"
+    SIDEWALK_IN = "SidewalkIn"
+    SIDEWALK_OUT = "SidewalkOut"
     # 철도
     LEFT_RAIL = "LeftRail"
     RIGHT_RAIL = "RightRail"
