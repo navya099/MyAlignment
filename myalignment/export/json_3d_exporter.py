@@ -1,9 +1,12 @@
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from html import escape
 import json
 from pathlib import Path
 from string import Template
 
 from myalignment.export.scene_3d_serializer import Scene3DSerializer
+from myalignment.render.primitives_3d import PrimitiveType3D
 from myalignment.render.scene_3d import Scene3D
 
 
@@ -13,6 +16,27 @@ class Json3DExporter:
     @classmethod
     def export(cls, scene: Scene3D, path: str | Path, indent: int | None = 2) -> None:
         Path(path).write_text(Scene3DSerializer.to_json(scene, indent), encoding="utf-8")
+
+    @classmethod
+    def export_mesh_with_legend(
+        cls, scene: Scene3D, html_path: str | Path, title: str = "3D Mesh Viewer",
+        legend: Sequence[Mapping[str, str]] | None = None, *,
+        three_module_base: str = "https://cdn.jsdelivr.net/npm/three@0.160.0/",
+    ) -> None:
+        """기존 뷰어에서 메시 레이어별 색상 또는 사용자 범례를 표시한다."""
+        labels = {
+            primitive.style.layer or "0": primitive.style.layer or "0"
+            for primitive in scene.primitives
+            if primitive.style.visible
+            and (primitive.type is PrimitiveType3D.TRIANGLE
+                 or (primitive.type is PrimitiveType3D.MESH and primitive.indices))
+        }
+        metadata = dict(scene.metadata)
+        labels.update(metadata.get("mesh_layers", {}))
+        metadata["mesh_layers"] = labels
+        if legend is not None:
+            metadata["mesh_legend"] = [{"name": item["name"], "color": item["color"]} for item in legend]
+        cls.export_to_html(replace(scene, metadata=metadata), html_path, title, three_module_base=three_module_base)
 
     @classmethod
     def export_to_html(
@@ -52,8 +76,10 @@ _HTML_TEMPLATE = Template("""<!doctype html>
   canvas { display: block; touch-action: none; }
   aside { width: clamp(145px, 20vw, 260px); padding: 16px; background: #18232c;
           border-left: 1px solid #344652; overflow: auto; }
-  aside h2 { margin: 0 0 12px; font-size: 13px; color: #bfd2dc; }
+  aside h2, aside h3 { margin: 0 0 12px; font-size: 13px; color: #bfd2dc; }
   label { display: flex; align-items: start; gap: 8px; margin-bottom: 8px; overflow-wrap: anywhere; }
+  .legend-item { display: flex; gap: 8px; margin: 8px 0; overflow-wrap: anywhere; }
+  #mesh-legend { margin-top: 12px; }
   input { accent-color: #80d8c9; margin: 2px 0; }
   .swatch { width: 12px; height: 12px; flex: 0 0 12px; border-radius: 2px; margin-top: 2px; }
   footer { padding: 9px 20px; background: #18232c; color: #bfd2dc; border-top: 1px solid #344652; }
@@ -66,7 +92,9 @@ $import_map
 <body>
 <header><h1>$title</h1><button id="fit" type="button" disabled>전체 보기</button></header>
 <main><div id="viewport" aria-label="3D 코리더 모델"></div>
-<aside hidden><h2>레이어</h2><div id="layers"></div></aside></main>
+<aside hidden><h2>레이어</h2><div id="layers"></div>
+<section id="mesh-legend" hidden><h3>메시 범례</h3><div id="mesh-legend-items"></div></section>
+</aside></main>
 <footer><p id="status" role="status">모델을 불러오는 중…</p></footer>
 <script type="application/json" id="scene-data">$scene_json</script>
 <script type="module">
@@ -169,6 +197,14 @@ async function render() {
   const sun = new THREE.DirectionalLight(0xffffff, 2);
   sun.position.set(1, 3, 2);
   scene.add(sun);
+  function appendLegendItem(row, color, label) {
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.backgroundColor = color;
+    row.append(swatch, document.createTextNode(label));
+  }
+
+  const meshLayers = data.metadata?.mesh_layers ?? {};
   for (const [name, group] of groups) {
     const row = document.createElement('label');
     const input = document.createElement('input');
@@ -178,14 +214,24 @@ async function render() {
     row.append(input);
     const entry = data.metadata?.link_surfaces?.[name];
     if (entry) {
-      const swatch = document.createElement('span');
-      swatch.className = 'swatch';
-      swatch.style.backgroundColor = colors.get(name);
-      row.append(swatch, document.createTextNode(entry.name + ' (' + entry.area_2d.toFixed(1) + ' m²)'));
+      appendLegendItem(row, colors.get(name), entry.name + ' (' + entry.area_2d.toFixed(1) + ' m²)');
+    } else if (Object.hasOwn(meshLayers, name)) {
+      appendLegendItem(row, colors.get(name), meshLayers[name]);
     } else {
       row.append(document.createTextNode(name));
     }
     document.querySelector('#layers').append(row);
+  }
+  const legend = data.metadata?.mesh_legend ?? [];
+  if (legend.length) {
+    const items = document.querySelector('#mesh-legend-items');
+    for (const {name, color} of legend) {
+      const row = document.createElement('div');
+      row.className = 'legend-item';
+      appendLegendItem(row, color, name);
+      items.append(row);
+    }
+    document.querySelector('#mesh-legend').hidden = false;
   }
   document.querySelector('aside').hidden = false;
 

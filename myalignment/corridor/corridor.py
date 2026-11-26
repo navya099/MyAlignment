@@ -6,6 +6,7 @@ from typing import Iterator, TYPE_CHECKING
 
 from myalignment.corridor.baseline import CorridorBaseline
 from myalignment.corridor.feature_line_manager import CorridorFeatureLineManager
+from myalignment.corridor.mesh_mode import MeshMode
 from myalignment.corridor.region import CorridorRegion
 from myalignment.corridor.surface_set import CorridorSurfaceSet
 from myalignment.target.reference import TargetObjectType
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from myalignment.corridor.slope_pattern_style import SlopePatternStyle
     from myalignment.corridor.surface_builder import CorridorSurfaceSpec
     from myalignment.profile.profile import Profile
+    from myalignment.render.scene_3d import Scene3D
     from myalignment.surface.tin_surface import TinSurface
 
 
@@ -270,6 +272,18 @@ class Corridor:
         return SlopePatternGenerator.generate_for_corridor(
             self, style, alignments=alignments, profiles=profiles,
             sample_frequency=sample_frequency, baseline_name=baseline_name,
+        )
+
+    def build_3d_mesh(
+        self, alignment: Alignment, mode: MeshMode | None = None, sample_frequency: float | None = None, *,
+        z_offset: float = 0.0, profile: Profile | None = None, baseline_name: str | None = None,
+    ) -> Scene3D:
+        """주어진 선형의 영역에서 3D 메시 장면을 생성한다."""
+        from myalignment.render.corridor_3d_mesh_renderer import Corridor3DMeshRenderer
+
+        return Corridor3DMeshRenderer.render_mesh(
+            self, alignment, MeshMode.LINK_BASED if mode is None else mode, sample_frequency, z_offset,
+            profile=profile, baseline_name=baseline_name,
         )
 
     def build_surface(

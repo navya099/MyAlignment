@@ -60,13 +60,7 @@ class Corridor3DRenderer:
             for triangle, code in zip(mesh.triangles, mesh.face_codes):
                 groups[cls.LINK_COLORS.get(getattr(code, "value", ""), 7)].append(triangle)
             for color, faces in groups.items():
-                used = dict.fromkeys(index for triangle in faces for index in triangle)
-                indices = {index: position for position, index in enumerate(used)}
-                primitives.append(Primitive3D.mesh(
-                    (mesh.vertices[index] for index in used),
-                    (tuple(indices[index] for index in triangle) for triangle in faces),
-                    Style3D(color=color, layer="C-CORRIDOR-MESH"),
-                ))
+                primitives.append(_indexed_mesh(mesh.vertices, faces, Style3D(color=color, layer="C-CORRIDOR-MESH")))
         return Scene3D(tuple(primitives))
 
     @classmethod
@@ -80,17 +74,32 @@ class Corridor3DRenderer:
                 )
 
 
-def _sections(corridor, alignment, frequency, offset, profile):
+def _indexed_mesh(vertices, faces, style):
+    indices = {index: position for position, index in enumerate(dict.fromkeys(i for face in faces for i in face))}
+    return Primitive3D.mesh(
+        (vertices[index] for index in indices),
+        (tuple(indices[index] for index in face) for face in faces),
+        style,
+    )
+
+
+def _sections(corridor, alignment, frequency, offset, profile, *, baseline_name=None):
     if frequency is not None and (not math.isfinite(frequency) or frequency <= 0):
         raise ValueError("sample_frequency must be finite and positive")
     if not math.isfinite(offset):
         raise ValueError("offset_elevation must be finite")
+    if baseline_name is not None and not any(
+        baseline.name == baseline_name and baseline.alignment_name == alignment.name for baseline in corridor.baselines
+    ):
+        raise ValueError(f"Missing baseline {baseline_name!r} for alignment {alignment.name!r}")
     profiles = {candidate.name: candidate for candidate in alignment.profiles}
     for region in corridor.regions:
         if region.assembly is None:
             continue
         grade = profile
         baseline = corridor.baseline_for_region(region)
+        if baseline_name is not None and (baseline is None or baseline.name != baseline_name):
+            continue
         if baseline is not None:
             if baseline.alignment_name != alignment.name:
                 continue

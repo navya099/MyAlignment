@@ -277,3 +277,34 @@ print(CorridorRehabReport.from_history(tx.history).to_text())
 - 각 명령의 결과는 기준선의 범위 안에 있어야 합니다. 같은 기준선에서 내부 구간이 겹칠 수 없으므로 공유 경계를 이동할 때는 한쪽 범위를 먼저 줄이고 다른 쪽을 늘립니다. 단면 조회와 샘플 조회는 공유 경계에서 먼저 시작한 영역을 사용합니다.
 - 분할은 `_A`, `_B` 이름을 만들고 원래 영역의 어셈블리, 타깃, 캔트를 유지합니다. 같은 기준선에서 인접하고 캔트 및 배치 방향이 호환되는 영역을 병합하면 앞쪽 영역의 설정과 `_merged` 이름을 사용합니다.
 - 편집으로 영역이 바뀌면 등록된 TIN 표면과 피처라인을 비웁니다. 필요에 따라 `build_surface()`와 `extract_feature_lines()`로 새 영역에서 다시 계산합니다. 트랜잭션 이력의 `snapshot_before`는 되돌리기에 사용할 수 있습니다.
+
+## 코리더 3D 메시 모드
+
+`Corridor.build_3d_mesh()`는 영역별 횡단을 샘플링해 3D 메시 장면을 반환합니다. 기준선에 지정한 종단과 영역의 캔트를 반영합니다. `sample_frequency`를 생략하면 영역별 표본 간격을 사용합니다.
+
+- `MeshMode.LINK_BASED`는 기본 모드입니다. 링크 코드마다 레이어를 만들고, HTML 뷰어 범례에서 각 레이어를 켜고 끌 수 있습니다.
+- `MeshMode.QUAD_STRIP`은 인접 횡단의 링크로 만든 사각형을 삼각형 두 개로 나누어 영역당 하나의 메시로 묶습니다.
+- `MeshMode.TRIANGULATED`는 영역의 샘플 점을 Delaunay 삼각분할하고 좌우 경계로 자릅니다. 같은 XY에 표고가 여러 개 있으면 가장 높은 점으로 TIN을 만듭니다. 수직 면이나 하부 층까지 표시하려면 링크 기반이나 사각 스트립 모드를 사용합니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.assembly.assembly import AssemblyBuilder
+from myalignment.assembly.subassemblies.basic_lane import BasicLane
+from myalignment.corridor.corridor_builder import CorridorBuilder
+from myalignment.corridor.mesh_mode import MeshMode
+from myalignment.render.corridor_3d_mesh_renderer import Corridor3DMeshPreview
+
+axis = AlignmentBuilder("Main").with_pi_coords([(0, 0), (40, 0)]).build()
+lane = AssemblyBuilder().add_both(lambda side: BasicLane(side=side)).build()
+corridor = (
+    CorridorBuilder("Road").add_baseline_from_alignment(axis)
+    .add_region("Paving", 0, 40, lane, frequency=5).build()
+)
+top = corridor.build_3d_mesh(axis, MeshMode.TRIANGULATED)
+assert top.primitives
+Corridor3DMeshPreview.preview(
+    corridor, axis, "corridor-mesh.html", "corridor-mesh.dxf", mode=MeshMode.LINK_BASED,
+)
+```
+
+같은 선형을 여러 기준선에서 쓰면 `baseline_name`으로 범위를 지정합니다. `profile`은 기준선의 종단을 덮어쓰며, `z_offset`은 모든 점의 표고에 더합니다. HTML 미리보기는 기존 Three.js 뷰어를 사용하고, DXF의 메시 면은 `3DFACE`로 저장됩니다.
