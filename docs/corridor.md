@@ -491,3 +491,37 @@ assert wider.param_set.outputs()["crossfall_percent"] == -2.0
 - 좌표 수식은 입력·계산·출력 파라미터와 산술 연산 `+`, `-`, `*`, `/`, `//`, `%`, `**`를 지원합니다. 동적 좌표에는 `station`, `grade`, `base_elevation`, `SectionContext.values`를 참조할 수 있습니다. `grade`처럼 컨텍스트가 필요한 수식은 `build(context=...)`에 초기 검증용 값을 전달합니다. 코리더는 횡단면을 생성할 때 해당 측점의 컨텍스트에서 수식을 다시 계산합니다.
 - `add_shape()`는 하나의 닫힌 경계를 이루는 링크에 형상 코드를 지정합니다. `QuantityTakeoff`는 그 코드로 재료 물량을 집계합니다. `custom_lane()`은 닫힌 포장층을 정의하는 예제입니다.
 - `presets`에는 차로, 갓길·연석, V형 배수로, 사면, 도시도로 단면이 있습니다. `custom_slope()`는 `TargetDTM`으로 연결된 지표면과의 교점을 사용합니다. 타깃을 연결하지 않았거나 교점을 찾지 못하면 지정한 높이와 사면비로 배치합니다.
+
+## 중력식 관망
+
+`PipeNetworkBuilder`에 맨홀과 기타 관망 구조물을 추가하고, 구조물 이름이나 ID로 직선 관로를 연결합니다. 위치는 `Point2d` 또는 선형의 원시 측점과 횡거로 지정합니다. 원시 측점으로 입력할 때는 `with_alignment(alignment)`에 선형 객체를 전달합니다. 관들만 만나는 접속점은 `add_null_structure()`로 추가합니다.
+
+```python
+from myalignment.alignment import AlignmentBuilder
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.pipe import PipeNetworkBuilder, PipeNetworkValidator
+from myalignment.render.pipe_network_renderer import PipeNetworkRenderer
+from myalignment.render.scene import Scene
+from myalignment.surface.tin_surface import TinSurface
+
+axis = AlignmentBuilder("Road").with_pi_coords([(0, 0), (40, 0)]).build()
+ground = TinSurface.from_points([(-1, -5, 12), (41, -5, 12), (41, 5, 12), (-1, 5, 12)])
+network = (
+    PipeNetworkBuilder("Storm")
+    .with_alignment(axis).with_surface(ground)
+    .add_manhole("MH-01", station=0, rim_elevation=12, invert_elevation=10)
+    .add_manhole("MH-02", station=40, rim_elevation=12, invert_elevation=9.6)
+    .add_pipe("P-01", "MH-01", "MH-02", diameter_mm=450)
+    .build()
+)
+assert PipeNetworkValidator.is_valid(network)
+assert round(network.pipes[0].slope_percent, 2) == 1.0
+assert round(network.min_cover, 2) == 1.5
+
+DxfWriter(PipeNetworkRenderer.render_plan(Scene(), network)).write("pipe-network.dxf")
+```
+
+- 각 관의 초기 관저고는 연결 구조물에서 가져옵니다. 관별로 `start_invert`와 `end_invert`를 지정할 수 있습니다. 완성된 관망의 구조물에는 연결 관 ID와 최저 접속 관저고가 기록됩니다. 구배는 관의 평면 길이를 기준으로 하며, 종점이 시점보다 낮으면 양수입니다.
+- 토피는 TIN 표고에서 외측 관정고를 뺀 값입니다. `min_cover`는 표고를 확인한 관 끝점의 최소값이며 미확인 상태는 `None`입니다. 관 중간의 토피는 별도 검토가 필요합니다. 유효성 검사는 기본값으로 최소 구배 0.5%와 끝점 토피 0.6m를 사용합니다. 참조 지표면을 지정했는데 끝점 표고를 확인할 수 없으면 검사 결과에 기록합니다.
+- `PipePart`에서 재질·단면 형상·두께를 지정합니다. 비원형 관은 `diameter_mm`을 내측 수직 높이로 사용하며, `width_mm`으로 내측 폭을 따로 지정할 수 있습니다. `with_parts_list()`에는 프로젝트 부품 목록 이름을 참조로 저장합니다.
+- `PipeNetwork3DRenderer.render()`는 관저고 경로와 구조물 림을 와이어프레임으로 그립니다. 종단 뷰의 `projections=`에는 `PipeNetworkRenderer.profile_projections(network, axis)`가 반환한 관 중심선 투영을 전달합니다.
