@@ -44,13 +44,20 @@ class Json3DExporter:
         *, three_module_base: str = "https://cdn.jsdelivr.net/npm/three@0.160.0/",
     ) -> None:
         """three_module_base는 CDN 또는 동일 버전의 로컬 배포 디렉터리 URL이다."""
+        cls._write_html(Scene3DSerializer.to_dict(scene), html_path, title, three_module_base=three_module_base)
+
+    @staticmethod
+    def _write_html(
+        data: dict, html_path: str | Path, title: str, *,
+        three_module_base: str = "https://cdn.jsdelivr.net/npm/three@0.160.0/",
+    ) -> None:
         base = three_module_base.rstrip("/") + "/"
         import_map = json.dumps({"imports": {
             "three": base + "build/three.module.js",
             "three/addons/": base + "examples/jsm/",
         }}).replace("<", r"\u003c")
         # JSON script의 종료 태그를 사용자 데이터가 만들 수 없게 한다.
-        payload = Scene3DSerializer.to_json(scene, indent=None).replace("<", r"\u003c")
+        payload = json.dumps(data, ensure_ascii=False, allow_nan=False).replace("<", r"\u003c")
         html = _HTML_TEMPLATE.substitute(title=escape(title), scene_json=payload, import_map=import_map)
         Path(html_path).write_text(html, encoding="utf-8")
 
@@ -84,6 +91,10 @@ _HTML_TEMPLATE = Template("""<!doctype html>
   .swatch { width: 12px; height: 12px; flex: 0 0 12px; border-radius: 2px; margin-top: 2px; }
   footer { padding: 9px 20px; background: #18232c; color: #bfd2dc; border-top: 1px solid #344652; }
   #status { margin: 0; }
+  #drive-controls:not([hidden]) { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+  #drive-controls label { align-items: center; margin: 0; }
+  #drive-time { flex: 1 1 180px; min-width: 100px; }
+  #drive-readout { font-variant-numeric: tabular-nums; }
 </style>
 <script type="importmap">
 $import_map
@@ -95,15 +106,141 @@ $import_map
 <aside hidden><h2>레이어</h2><div id="layers"></div>
 <section id="mesh-legend" hidden><h3>메시 범례</h3><div id="mesh-legend-items"></div></section>
 </aside></main>
-<footer><p id="status" role="status">모델을 불러오는 중…</p></footer>
+<footer>
+<p id="status" role="status">모델을 불러오는 중…</p>
+<section id="drive-controls" aria-label="주행 제어" hidden>
+<button id="drive-play" type="button">재생</button>
+<button id="drive-reset" type="button">처음으로</button>
+<input id="drive-time" type="range" min="0" step="any" value="0" aria-label="재생 시각">
+<label>재생 속도 <select id="drive-speed">
+<option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option>
+<option value="2">2×</option><option value="4">4×</option>
+</select></label>
+<span id="drive-readout"></span>
+</section>
+</footer>
 <script type="application/json" id="scene-data">$scene_json</script>
 <script type="module">
 const status = document.querySelector('#status');
 const viewport = document.querySelector('#viewport');
 const fit = document.querySelector('#fit');
 const data = JSON.parse(document.querySelector('#scene-data').textContent);
+function setupDrive(THREE, drive, camera, controls, canvas, local) {
+  const frames = drive.frames;
+  const duration = drive.duration;
+  const ui = document.querySelector('#drive-controls');
+  const play = document.querySelector('#drive-play');
+  const reset = document.querySelector('#drive-reset');
+  const seek = document.querySelector('#drive-time');
+  const speed = document.querySelector('#drive-speed');
+  const readout = document.querySelector('#drive-readout');
+  let time = 0, playing = false, active = false, previous = null;
+  let yaw = 0, pitch = 0;
+
+  function frameAt(t) {
+    let lo = 0, hi = frames.length;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (frames[mid].timestamp < t) lo = mid + 1;
+      else hi = mid;
+    }
+    const b = frames[Math.min(lo, frames.length - 1)];
+    if (lo === 0 || lo === frames.length || b.timestamp === t) return b;
+    const a = frames[lo - 1];
+    const f = (t - a.timestamp) / (b.timestamp - a.timestamp);
+    const mix = (x, y) => x + (y - x) * f;
+    const vector = (x, y) => x.map((value, axis) => mix(value, y[axis]));
+    return {
+      position: vector(a.position, b.position), target: vector(a.target, b.target),
+      up: vector(a.up, b.up), fov: mix(a.fov, b.fov), station: mix(a.station, b.station),
+    };
+  }
+
+  function draw() {
+    const frame = frameAt(time);
+    camera.position.set(...local(frame.position));
+    const [x, y, z] = frame.up;
+    camera.up.set(x, z, -y);
+    if (camera.up.lengthSq() < 1e-12) camera.up.set(0, 1, 0);
+    const target = new THREE.Vector3(...local(frame.target));
+    if (target.distanceToSquared(camera.position) < 1e-12) target.x += 1;
+    camera.lookAt(target);
+    camera.rotateY(yaw);
+    camera.rotateX(pitch);
+    camera.fov = frame.fov;
+    camera.near = drive.near_plane;
+    camera.far = drive.far_plane;
+    camera.updateProjectionMatrix();
+    seek.value = time;
+    const kmh = drive.speed_kmh * Number(speed.value);
+    readout.textContent = 'STA ' + frame.station.toFixed(2) + ' · ' + time.toFixed(2)
+      + ' / ' + duration.toFixed(2) + ' s · ' + kmh.toFixed(1) + ' km/h';
+  }
+
+  function setPlaying(value) {
+    playing = value;
+    previous = null;
+    play.textContent = value ? '일시정지' : '재생';
+  }
+
+  function enter() {
+    active = true;
+    controls.enabled = false;
+    draw();
+  }
+
+  play.addEventListener('click', () => {
+    enter();
+    if (!playing && time >= duration) time = 0;
+    setPlaying(!playing);
+    draw();
+  });
+  reset.addEventListener('click', () => {
+    time = yaw = pitch = 0;
+    setPlaying(false);
+    enter();
+  });
+  seek.addEventListener('input', () => {
+    time = Number(seek.value);
+    setPlaying(false);
+    enter();
+  });
+  speed.addEventListener('change', () => { if (active) draw(); });
+  if (drive.direction_mode === 'Free') {
+    canvas.addEventListener('pointermove', event => {
+      if (!active || !(event.buttons & 1)) return;
+      yaw -= event.movementX * .003;
+      pitch = Math.max(-1.5, Math.min(1.5, pitch - event.movementY * .003));
+      draw();
+    });
+  }
+  seek.max = duration;
+  seek.disabled = play.disabled = duration === 0;
+  ui.hidden = false;
+  enter();
+
+  return {
+    overview() {
+      active = false;
+      controls.enabled = true;
+      camera.up.set(0, 1, 0);
+      setPlaying(false);
+    },
+    tick(now) {
+      if (playing) {
+        if (previous !== null) time = Math.min(duration, time + (now - previous) / 1000 * Number(speed.value));
+        previous = now;
+        if (time >= duration) setPlaying(false);
+        draw();
+      }
+      return active;
+    },
+  };
+}
+
 async function render() {
-  if (!data.primitives.length) {
+  const drive = data.metadata?.drive_view;
+  if (!data.primitives.length && !drive?.frames?.length) {
     status.textContent = '표시할 3D 도형이 없습니다.';
     return;
   }
@@ -129,6 +266,7 @@ async function render() {
   for (const prim of data.primitives) {
     for (const point of vertices(prim)) bounds.expandByPoint(new THREE.Vector3(...point));
   }
+  for (const frame of drive?.frames ?? []) bounds.expandByPoint(new THREE.Vector3(...frame.position));
   const center = bounds.getCenter(new THREE.Vector3());
   const size = bounds.getSize(new THREE.Vector3());
   const radius = Math.max(size.length() / 2, 0.01);
@@ -233,7 +371,7 @@ async function render() {
     }
     document.querySelector('#mesh-legend').hidden = false;
   }
-  document.querySelector('aside').hidden = false;
+  document.querySelector('aside').hidden = groups.size === 0;
 
   function resize() {
     const width = Math.max(viewport.clientWidth, 1);
@@ -243,6 +381,7 @@ async function render() {
     renderer.setSize(width, height);
   }
   function fitModel() {
+    camera.fov = 50;
     const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
     const angle = Math.min(halfFov, Math.atan(Math.tan(halfFov) * camera.aspect));
     const distance = radius / Math.sin(angle) * 1.15;
@@ -258,10 +397,14 @@ async function render() {
   resize();
   fitModel();
   fit.disabled = false;
-  fit.addEventListener('click', fitModel);
+  const driver = drive?.frames?.length ? setupDrive(THREE, drive, camera, controls, renderer.domElement, local) : null;
+  fit.addEventListener('click', () => {
+    driver?.overview();
+    fitModel();
+  });
   status.textContent = '메쉬 ' + meshCount + ' · 선 ' + lineCount + ' · 삼각형 ' + faceCount;
-  renderer.setAnimationLoop(() => {
-    controls.update();
+  renderer.setAnimationLoop(now => {
+    if (!driver?.tick(now)) controls.update();
     renderer.render(scene, camera);
   });
 }

@@ -112,3 +112,39 @@ DxfWriter(scene).write("section-projections.dxf")
 - 투영 레이어 이름, 외곽선, 마커, 레이블은 `SectionProjectionStyle`로 설정합니다. 원지형도 표시할 때는 `SectionViewComposer.with_surface(projections=...)`를 사용합니다.
 
 DXF writer는 R12 텍스트 DXF를 생성하고 한글은 CP949로 저장합니다. R12의 출력 범위에는 Civil 3D 편집 객체나 선가중치 속성이 포함되지 않습니다. Civil 3D에서 직접 파일을 여는 검증은 별도로 필요합니다.
+
+## 3D 드라이브 뷰
+
+`DriveViewPreview.preview()`는 선형을 따라 카메라 경로를 생성하고 브라우저에서 재생할 수 있는 HTML을 저장합니다. 코리더를 전달하면 3D 메시를 배경으로 사용합니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.assembly.assembly import AssemblyBuilder
+from myalignment.assembly.subassemblies.basic_lane import BasicLane
+from myalignment.corridor.corridor_builder import CorridorBuilder
+from myalignment.drive.camera_direction import CameraDirectionMode
+from myalignment.drive.drive_config import DriveViewConfig
+from myalignment.drive.drive_preview import DriveViewPreview
+from myalignment.profile.profile import ProfileBuilder
+
+grade = ProfileBuilder("Grade").add_tangent(0, 40, 10, 12).build()
+axis = (
+    AlignmentBuilder("Road").with_pi_coords([(500000, 300000), (500040, 300000)])
+    .with_profile(grade).build()
+)
+assembly = AssemblyBuilder().add_both(lambda side: BasicLane(side=side)).build()
+corridor = (
+    CorridorBuilder("Road").add_baseline_from_alignment(axis, grade)
+    .add_region("Paving", 0, 40, assembly).build()
+)
+config = DriveViewConfig(
+    speed_kmh=36, sample_interval=5, x_offset=1.7, y_offset=1.5,
+    direction_mode=CameraDirectionMode.LOOK_AHEAD, look_ahead_distance=15,
+)
+DriveViewPreview.preview(axis, config, "drive.html", corridor)
+```
+
+- `start_station`과 `end_station`은 기하 측점입니다. `station_offset`은 선형 진행 방향, `x_offset`은 오른쪽, `y_offset`은 위쪽이 양수입니다. 카메라가 선형과 종단의 유효 범위 안에 있도록 주행 구간을 조정합니다.
+- 카메라 높이는 `surface_elevation_func(x, y)`, 선택한 종단, 0m 순서로 기준 표고를 구한 뒤 `y_offset`을 더합니다. 코리더에 지정한 종단이 하나면 미리보기가 해당 종단을 선택합니다. 여러 종단이 있으면 `baseline_name`이나 `profile`을 지정할 수 있습니다.
+- HTML에서 재생·일시정지, 위치 탐색, 재생 속도 조절과 전체 보기를 사용할 수 있습니다. 자유 시점에서는 드래그로 주시 방향을 바꿀 수 있습니다. 브라우저의 실제 시야각은 `field_of_view`를 사용합니다.
+- 카메라 프레임이 필요하면 `DriveViewGenerator.generate()`를 호출합니다. `DrivePath.at_time()`은 초 단위로 프레임을 보간합니다. `DriveView3DRenderer`는 경로와 방향선을 별도 장면에 그릴 때 사용합니다.
