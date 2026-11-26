@@ -119,13 +119,13 @@ def _viewport(items: Iterable[tuple[Primitive, Layer]], style: SvgStyle) -> _Vie
     right = top = -math.inf
     stroke = 0.0
     for primitive, layer in items:
-        if not layer.visible:
+        if not layer.visible or primitive.style.opacity == 0:
             continue
         for x, y in _points_for_fit(primitive, style):
             if not (math.isfinite(x) and math.isfinite(y)):
                 raise ValueError("SVG coordinates must be finite")
             left, right, bottom, top = min(left, x), max(right, x), min(bottom, y), max(top, y)
-        if primitive.type is not PrimitiveType.TEXT:
+        if primitive.type not in (PrimitiveType.TEXT, PrimitiveType.POLYGON):
             stroke = max(stroke, _stroke_width(primitive, layer, style))
     if left == math.inf:
         return _Viewport(0, 0, page_width / 2, page_height / 2, 1)
@@ -141,7 +141,10 @@ def _viewport(items: Iterable[tuple[Primitive, Layer]], style: SvgStyle) -> _Vie
 
 def _validate_shape(primitive):
     count = len(primitive.points)
-    if primitive.type is PrimitiveType.POLYLINE:
+    if primitive.type is PrimitiveType.POLYGON:
+        if count < 3:
+            raise ValueError("SVG filled polygon requires at least three points")
+    elif primitive.type is PrimitiveType.POLYLINE:
         if count < 2:
             raise ValueError("SVG polyline requires at least two points")
     elif count != (2 if primitive.type is PrimitiveType.LINE else 1):
@@ -204,12 +207,17 @@ class SvgWriter:
         color = AciColorMap.to_css(layer.color if aci == 256 else aci, dark) if style.use_aci_colors else (
             "#FFFFFF" if dark else "#000000"
         )
+        opacity = {} if primitive.style.opacity == 1 else {"opacity": _number(primitive.style.opacity)}
+        if kind is PrimitiveType.POLYGON:
+            coords = " ".join(",".join(viewport.point(point)) for point in points)
+            ET.SubElement(group, "polygon", dict(opacity, points=coords, fill=color))
+            return
         if kind is PrimitiveType.TEXT:
             self._add_text(group, primitive, viewport, color)
             return
         attrs = {
             "stroke": color, "stroke-width": _number(_stroke_width(primitive, layer, style)),
-            "fill": "none", "stroke-linecap": "round", "stroke-linejoin": "round",
+            "fill": "none", "stroke-linecap": "round", "stroke-linejoin": "round", **opacity,
         }
         linetype = _linetype(primitive.style.linetype)
         if linetype in ("BYLAYER", "BYBLOCK"):
@@ -253,6 +261,8 @@ class SvgWriter:
             raise ValueError("SVG text height must be finite and positive")
         attrs = {"x": x, "y": y, "fill": color, "font-family": self.style.font_family, "font-size": _number(size),
                  "xml:space": "preserve"}
+        if primitive.style.opacity != 1:
+            attrs["opacity"] = _number(primitive.style.opacity)
         if primitive.rotation:
             attrs["transform"] = f"rotate({_number(-math.degrees(primitive.rotation))} {x} {y})"
         text = ET.SubElement(group, "text", attrs)

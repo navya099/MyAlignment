@@ -165,3 +165,32 @@ DxfWriter(scene).write("profile-projections.dxf")
 교량·터널은 표시 가능한 구조물 구간의 중앙에서 참조 종단 표고를 읽습니다. 교차 선형은 참조 종단 범위 안에서 발견된 교차점마다 표시합니다. 형상선과 관로 경로는 입력 정점 순서와 Z 좌표를 유지합니다. 점과 블록 삽입점은 명시한 표고, 점의 Z, 참조 종단 표고 순으로 사용합니다. 평면 투영에는 선형의 최근접점을 사용하므로 선형 끝의 바깥쪽에 있는 점은 끝 측점에 투영될 수 있습니다.
 
 관로는 `project_pipe()`에 3D 중심선 좌표를 전달합니다. 블록은 `ProjectionObjectType.BLOCK` 스타일을 지정한 삽입점으로 표현합니다. 분할 뷰에서는 경계에서 경로 표고를 보간하며, 패널을 벗어났다가 다시 들어오는 경로는 별도 조각으로 그립니다.
+
+## 종단 절토·성토 해치
+
+`ProfileViewRenderer.render(hatch_style=...)`는 설계 종단이 원지반 아래에 있는 구간을 절토로, 위에 있는 구간을 성토로 그립니다. 이름이 `FG`, `EG`인 종단을 먼저 찾고 종단 유형을 확인합니다. 다른 이름을 명시하려면 `fg_profile_name`과 `eg_profile_name`을 전달합니다. 분할 종단 뷰에도 같은 옵션을 사용할 수 있습니다.
+
+```python
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.export.svg_writer import SvgWriter
+from myalignment.profile.hatch_generator import ProfileHatchGenerator
+from myalignment.profile.hatch_pattern import HatchPattern
+from myalignment.profile.hatch_style import ProfileHatchStyle
+from myalignment.profile.profile import ProfileBuilder
+from myalignment.profile.view_style import ProfileViewStyle
+from myalignment.render.profile_view_renderer import ProfileViewRenderer
+
+fg = ProfileBuilder("FG").add_tangent(0, 100, 10, 16).build()
+eg = ProfileBuilder("EG").add_tangent(0, 100, 13, 13).build()
+style = ProfileHatchStyle(cut_pattern=HatchPattern.DIAGONAL, fill_pattern=HatchPattern.SOLID)
+scene = ProfileViewRenderer.render([fg, eg], "Road", ProfileViewStyle(), hatch_style=style)
+SvgWriter(scene).write("profile-hatch.svg")
+DxfWriter(scene).write("profile-hatch.dxf")
+
+hatches = ProfileHatchGenerator.generate(fg, eg, style, road_width=8)
+assert hatches.total_area("cut") == 75.0
+```
+
+패턴은 단색, 대각선, 교차, 수평선, 수직선과 점을 지원합니다. `show_net=True`는 두 영역을 `net_color`로 표시하며 `HatchCollection.net_area`는 절토 면적에서 성토 면적을 뺀 값입니다. SVG에는 불투명도를 보존하고 DXF R12의 단색 채우기는 불투명한 `SOLID` 삼각형으로 저장합니다.
+
+`sample_step`은 곡선 해치 외곽의 샘플 간격을 정합니다. 면적은 샘플로 구성한 종단면의 면적이며 체적은 그 면적에 일정한 `road_width`를 곱한 추정치입니다. 도로 폭을 생략하면 10m를 사용합니다.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
+import math
 
 from cadgeom import Point2d
 
@@ -11,6 +12,7 @@ class PrimitiveType(Enum):
     LINE = "LINE"
     ARC = "ARC"
     POLYLINE = "POLYLINE"
+    POLYGON = "POLYGON"
     TEXT = "TEXT"
     CIRCLE = "CIRCLE"
 
@@ -23,6 +25,11 @@ class Style:
     linetype: str = "CONTINUOUS"
     lineweight: float = 0.0
     layer: str = "0"
+    opacity: float = 1.0
+
+    def __post_init__(self):
+        if not math.isfinite(self.opacity) or not 0 <= self.opacity <= 1:
+            raise ValueError("opacity must be between 0 and 1")
 
 
 class _Text:
@@ -61,6 +68,16 @@ class Primitive:
         if closed and len(vertices) > 1 and vertices[-1] != vertices[0]:
             vertices += (vertices[0],)
         return cls(PrimitiveType.POLYLINE, vertices, style or Style(), closed=closed)
+
+    @classmethod
+    def polygon(cls, points: Iterable[Point2d], style: Style | None = None) -> Primitive:
+        """색상으로 채운 닫힌 면을 만든다."""
+        vertices = tuple(points)
+        if vertices and vertices[0] == vertices[-1]:
+            vertices = vertices[:-1]
+        if len(vertices) < 3:
+            raise ValueError("A filled polygon requires at least three points")
+        return cls(PrimitiveType.POLYGON, vertices, style or Style(), closed=True)
 
     @classmethod
     def arc(

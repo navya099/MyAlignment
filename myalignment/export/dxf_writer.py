@@ -4,6 +4,9 @@ import math
 from pathlib import Path
 from typing import TextIO
 
+from shapely import constrained_delaunay_triangles
+from shapely.geometry import Polygon
+
 from myalignment.render.primitives import Primitive, PrimitiveType
 from myalignment.render.scene import Layer, Scene
 
@@ -54,7 +57,7 @@ def _xyz(point, x_code: int = 10) -> tuple[tuple[int, float], ...]:
 
 
 class DxfWriter:
-    """LINE, POLYLINE, ARC, CIRCLE, TEXT를 DXF R12 텍스트 형식으로 저장한다.
+    """2D 선, 원호, 텍스트와 채운 면을 DXF R12 텍스트 형식으로 저장한다.
 
     한글은 ANSI_949 코드페이지로 저장한다. R12에는 선가중치 속성이 없다. 알려지지 않은 선종류 이름은 연속선
     패턴으로 등록하며, 사용자 패턴은 linotypes로 지정할 수 있다.
@@ -69,7 +72,8 @@ class DxfWriter:
             self._patterns.update((name.upper(), pattern) for name, pattern in linotypes.items())
 
     def write(self, path: str | Path) -> None:
-        self._write_scene(path, self.scene.primitives, self.scene.layers)
+        primitives = tuple(p for p in self.scene.primitives if p.style.opacity > 0)
+        self._write_scene(path, primitives, self.scene.layers)
 
     def _write_scene(self, path, primitives, explicit_layers):
         layers = {"0": Layer("0")}
@@ -126,6 +130,19 @@ class DxfWriter:
         kind = primitive.type
         points = primitive.points
         style = primitive.style
+        if kind is PrimitiveType.POLYGON:
+            polygon = Polygon([(point.x, point.y) for point in points])
+            if not polygon.is_valid or not polygon.area:
+                raise ValueError("DXF filled polygon must have a valid exterior and positive area")
+            for triangle in constrained_delaunay_triangles(polygon).geoms:
+                a, b, c = tuple(triangle.exterior.coords)[:3]
+                _groups(
+                    stream, (0, "SOLID"), (8, layer), (62, style.color),
+                    *((10 + index, x) for index, (x, _) in enumerate((a, b, c, c))),
+                    *((20 + index, y) for index, (_, y) in enumerate((a, b, c, c))),
+                    *((30 + index, 0.0) for index in range(4)),
+                )
+            return
         _groups(
             stream, (0, kind.value), (8, layer), (62, style.color),
             (6, _linetype(style.linetype)),

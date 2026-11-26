@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING
 from myalignment.profile.band_style import GeometryBandStyle, VerticalGeometryBandStyle
 from myalignment.profile.cant_band_style import CantBandStyle
 from myalignment.profile.grade_break_style import GradeBreakLabelStyle
+from myalignment.profile.hatch_generator import ProfileHatchGenerator
+from myalignment.profile.hatch_style import ProfileHatchStyle
+from myalignment.profile.profiletype import ProfileType
 from myalignment.profile.label_type import ProfileLabelType
 from myalignment.profile.view_band import BandType, ProfileViewBand
 from myalignment.profile.view_style import ProfileViewStyle
@@ -17,6 +20,7 @@ from myalignment.render.depth_label_renderer import DepthLabelRenderer
 from myalignment.render.grade_break_label_renderer import GradeBreakLabelRenderer
 from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRenderer
 from myalignment.render.primitives import Primitive, Style
+from myalignment.render.profile_hatch_renderer import ProfileHatchRenderer
 from myalignment.render.profile_label_renderer import ProfileLabelRenderer
 from myalignment.render.profile_renderer import ProfileRenderer, _entity_ranges
 from myalignment.render.projection_renderer import ProjectionRenderer
@@ -31,6 +35,7 @@ from myalignment.render.viewport import Viewport, ViewportType
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
     from myalignment.profile.depth_label import DepthLabel
+    from myalignment.profile.hatch_region import HatchCollection
     from myalignment.profile.profile import Profile
     from myalignment.profile.station_label import StationElevationLabel
     from myalignment.profile.view_projection import ProfileViewProjection
@@ -62,6 +67,13 @@ def _elevations(profile: Profile, station_range: tuple[float, float]):
                 yield entity.elevation_at(station)
 
 
+def _hatch_profile(profiles, name, code, profile_type):
+    if name is not None:
+        return next((profile for profile in profiles if profile.name == name), None)
+    named = next((profile for profile in profiles if profile.name == code), None)
+    return named if named is not None else next((p for p in profiles if p.profile_type is profile_type), None)
+
+
 class ProfileViewRenderer:
     """종단선, 그리드, 데이터 밴드를 하나의 Scene에 렌더링한다."""
 
@@ -91,6 +103,10 @@ class ProfileViewRenderer:
         stagger_config: StaggerConfig | None = None,
         station_range: tuple[float, float] | None = None,
         projections: Sequence[ProfileViewProjection] | None = None,
+        hatch_style: ProfileHatchStyle | None = None,
+        fg_profile_name: str | None = None,
+        eg_profile_name: str | None = None,
+        hatches: HatchCollection | None = None,
     ) -> Scene:
         """종단 뷰를 렌더링하고 지정한 레이블을 배치한다.
 
@@ -121,6 +137,11 @@ class ProfileViewRenderer:
             if projection.style.show_range or projection.style.show_marker or projection.style.show_label
             for path in projection.clipped_paths((start, end)) for point in path
         )
+        if hatches is not None:
+            for region in hatches:
+                clipped = region.clipped((start, end))
+                if clipped is not None:
+                    window_elevations.extend(point.y for point in clipped.polygon)
         low, high = min(window_elevations) - 5, max(window_elevations) + 5
         viewport = Viewport(ViewportType.PROFILE, style.vertical_exaggeration)
 
@@ -146,6 +167,15 @@ class ProfileViewRenderer:
                 closed=True, style=frame,
             ))
         scene = scene.add_layer(Layer(cls.GRID_LAYER, color=8)).add_all(grid)
+
+        if hatches is None and hatch_style is not None:
+            design = _hatch_profile(valid_profiles, fg_profile_name, "FG", ProfileType.FG)
+            candidates = tuple(profile for profile in valid_profiles if profile is not design)
+            existing = _hatch_profile(candidates, eg_profile_name, "EG", ProfileType.EG)
+            if design is not None and existing is not None:
+                hatches = ProfileHatchGenerator.generate(design, existing, hatch_style, station_range=(start, end))
+        if hatches is not None:
+            scene = ProfileHatchRenderer.render(scene, hatches, style, style=hatch_style, station_range=(start, end))
 
         custom_grade_breaks = render_grade_breaks and grade_break_style is not None
         for profile in valid_profiles:
