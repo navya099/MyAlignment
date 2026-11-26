@@ -155,3 +155,38 @@ DxfWriter(scene).write("station-offset-labels.dxf")
 - 템플릿의 `<[Station Value]>`는 측점 방정식을 적용한 표시 측점이고 `<[Raw Station]>`은 원시 측점입니다. `Easting`과 `Northing`은 표식기 좌표입니다. 선형 위 투영점 좌표는 `Alignment Easting`과 `Alignment Northing`을 사용합니다.
 - 다른 선형을 참조하려면 `reference_alignment_name`을 설정하고 `render_plan(reference_alignments=...)`에 이름별 선형을 전달합니다. `Ref Station`, `Ref Raw Station`, `Ref Offset`, `Ref Alignment Name` 필드를 사용할 수 있습니다. 측량점은 `reference_point_name`과 `reference_points`로 전달합니다. 템플릿에서 참조를 찾을 수 없으면 `???`로 표시합니다.
 - 공통 스타일은 `AlignmentLabelSet.with_station_offset_style()`로 지정합니다. 개별 레이블의 `label_style`이 공통 스타일보다 우선합니다. `render_plan(station_offset_labels=...)`로 출력할 레이블을 임시 지정할 수 있습니다. 현재 선형 범위 밖의 상대 레이블은 일괄 출력에서 생략합니다.
+
+## 평면도의 종단 기하점 레이블
+
+`AlignmentLabelSet.with_profile_geometry()`는 표준 평면도 레이블에 PVI와 종단곡선 시작점(VPC)·끝점(VPT)을 추가합니다. `with_profile_geometry_style()`로 고점·저점, 구배 변경점, 종단 시작·끝까지 선택할 수 있습니다. 같은 측점의 기하점은 표식기를 공유하며 텍스트는 선형의 횡방향으로 쌓입니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.alignment.label_set import AlignmentLabelSet
+from myalignment.alignment.profile_geometry_label_style import ProfileGeometryLabelStyle
+from myalignment.alignment.profile_geometry_label_type import ProfileGeometryPointLabelType
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.profile.profile import ProfileBuilder
+from myalignment.render.alignment_renderer import AlignmentRenderer
+
+profile = (
+    ProfileBuilder("Design")
+    .add_tangent(100, 140, 10, 12)
+    .add_tangent(140, 200, 12, 10)
+    .build()
+)
+labels = AlignmentLabelSet().with_profile_geometry_style(
+    ProfileGeometryLabelStyle.with_grade_info(),
+    labeled_points=(ProfileGeometryPointLabelType.GRADE_BREAK,),
+)
+axis = (
+    AlignmentBuilder("Main").with_pi_coords([(0, 0), (100, 0)])
+    .with_start_station(100).build().add_station_equation(130, 300)
+    .with_label_set(labels)
+)
+scene = AlignmentRenderer.render_plan(axis, render_labels=True, fg_profile=profile)
+assert any("STA 310.00" in (primitive.text or "") for primitive in scene.primitives)
+DxfWriter(scene).write("profile-geometry-labels.dxf")
+```
+
+`fg_profile=`로 레이블을 추출할 종단을 지정합니다. 생략하면 선형에 연결된 계획 종단을 사용합니다. 원시 측점으로 좌표를 계산하고 `<[Station Value]>`에는 측점 방정식을 적용합니다. 포물선 PVI의 표고는 접선 교점에서 가져오며, 고점·저점의 표고는 곡선에서 계산합니다. `show_leader=True`는 표식기에서 텍스트로 지시선을 추가합니다.

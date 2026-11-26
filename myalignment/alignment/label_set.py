@@ -8,6 +8,8 @@ from myalignment.alignment.curve_label_style import CurveLabelStyle
 from myalignment.alignment.equation_label_style import StationEquationLabelStyle
 from myalignment.alignment.label_style import AlignmentLabelStyle
 from myalignment.alignment.label_type import AlignmentLabelType
+from myalignment.alignment.profile_geometry_label_style import ProfileGeometryLabelStyle
+from myalignment.alignment.profile_geometry_label_type import ProfileGeometryPointLabelType
 from myalignment.alignment.spiral_label_style import SpiralLabelStyle
 from myalignment.alignment.station_offset_label_style import StationOffsetLabelStyle
 
@@ -21,12 +23,19 @@ class AlignmentLabelSet:
 
     equation_style: StationEquationLabelStyle | None = None
     station_offset_style: StationOffsetLabelStyle | None = None
+    profile_geometry_style: ProfileGeometryLabelStyle | None = None
+    profile_geometry_labeled_points: tuple[ProfileGeometryPointLabelType, ...] | None = None
 
     def __post_init__(self):
         styles = dict(self.styles)
         if any(kind is not style.label_type for kind, style in styles.items()):
             raise ValueError("레이블 유형과 스타일 유형이 일치해야 합니다")
         object.__setattr__(self, "styles", MappingProxyType(styles))
+        if self.profile_geometry_labeled_points is not None:
+            points = tuple(self.profile_geometry_labeled_points)
+            if any(not isinstance(point, ProfileGeometryPointLabelType) for point in points):
+                raise ValueError("profile_geometry_labeled_points must contain ProfileGeometryPointLabelType values")
+            object.__setattr__(self, "profile_geometry_labeled_points", points)
 
     def get_style(self, label_type: AlignmentLabelType) -> AlignmentLabelStyle | None:
         return self.styles.get(label_type)
@@ -40,6 +49,19 @@ class AlignmentLabelSet:
     def with_station_offset_style(self, style: StationOffsetLabelStyle | None) -> AlignmentLabelSet:
         """측점·횡거 레이블에 적용할 기본 스타일을 설정한다."""
         return replace(self, station_offset_style=style)
+
+    def with_profile_geometry_style(
+        self, style: ProfileGeometryLabelStyle | None, *,
+        labeled_points: tuple[ProfileGeometryPointLabelType, ...] | None = None,
+    ) -> AlignmentLabelSet:
+        """기존 평면 레이블을 유지하고 종단 기하점 스타일과 필터를 설정한다."""
+        return replace(self, profile_geometry_style=style, profile_geometry_labeled_points=labeled_points)
+
+    @classmethod
+    def with_profile_geometry(cls) -> AlignmentLabelSet:
+        """표준 평면과 종단 기하점 레이블을 함께 사용한다."""
+        return replace(cls.standard(), name="With Profile Geometry",
+                       profile_geometry_style=ProfileGeometryLabelStyle.standard())
 
     @property
     def curve_style(self) -> AlignmentLabelStyle | None:

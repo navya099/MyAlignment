@@ -16,6 +16,7 @@ from myalignment.render.surface_renderer import TinSurfaceRenderer
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
+    from myalignment.profile.profile import Profile
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +37,7 @@ class SceneComposer:
     @classmethod
     def compose_alignment(
         cls, alignment: Alignment, options: RenderOptions | None = None, *,
-        scene: Scene | None = None,
+        scene: Scene | None = None, fg_profile: Profile | None = None,
         reference_alignments: Mapping[str, Alignment] | None = None,
         reference_points: Mapping[str, Point2d] | None = None,
     ) -> Scene:
@@ -45,7 +46,7 @@ class SceneComposer:
         if options.render_alignment:
             scene = AlignmentRenderer.render_plan(
                 alignment, scene, options.alignment_sample_step,
-                render_labels=options.render_alignment_labels,
+                render_labels=options.render_alignment_labels, fg_profile=fg_profile,
                 reference_alignments=reference_alignments, reference_points=reference_points,
             )
         if options.render_profiles:

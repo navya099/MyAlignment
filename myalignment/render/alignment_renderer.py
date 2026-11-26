@@ -39,6 +39,7 @@ class AlignmentRenderer:
         cls, alignment: Alignment, scene: Scene | None = None, sample_step: float = 1.0,
         *, render_labels: bool = False, surface: TinSurface | None = None,
         profile: Profile | None = None, reference_alignment: Alignment | None = None,
+        fg_profile: Profile | None = None,
         render_equations: bool = True,
         stagger_config: StaggerConfig | None = None,
         render_curves: bool = True,
@@ -94,6 +95,7 @@ class AlignmentRenderer:
         if render_labels:
             scene = AlignmentLabelRenderer.render(
                 scene, alignment, surface, profile=profile, reference_alignment=reference_alignment,
+                fg_profile=fg_profile,
                 render_equations=render_equations,
                 render_curves=render_curves, render_spirals=render_spirals, station_offset_labels=station_offset_labels,
                 reference_alignments=reference_alignments, reference_points=reference_points,

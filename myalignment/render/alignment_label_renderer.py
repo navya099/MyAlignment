@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 import math
 import re
 from typing import TYPE_CHECKING
@@ -254,6 +255,7 @@ class AlignmentLabelRenderer:
     def render(
         cls, scene: Scene, alignment: Alignment, surface: TinSurface | None = None, *,
         profile: Profile | None = None, reference_alignment: Alignment | None = None,
+        fg_profile: Profile | None = None,
         major_interval: float | None = None, minor_interval: float | None = None,
         render_equations: bool = True,
         render_curves: bool = True, render_spirals: bool = True,
@@ -316,6 +318,22 @@ class AlignmentLabelRenderer:
             scene = scene.add_layer(layer)
         if primitives:
             scene = scene.add_all(primitives)
+        geometry_style = alignment.label_set.profile_geometry_style
+        if geometry_style is not None:
+            design = fg_profile if fg_profile is not None else alignment.fg_profile or profile
+            if design is not None and design.is_valid:
+                from myalignment.alignment.profile_geometry_label_extractor import ProfileGeometryLabelExtractor
+                from myalignment.render.profile_geometry_label_renderer import ProfileGeometryLabelRenderer
+
+                kinds = alignment.label_set.profile_geometry_labeled_points
+                if kinds is not None:
+                    geometry_style = replace(geometry_style, labeled_points=kinds)
+                labels = ProfileGeometryLabelExtractor.extract(design, geometry_style.labeled_points)
+                scene = ProfileGeometryLabelRenderer.render(
+                    scene, alignment, labels, geometry_style,
+                    reference_profile=profile, reference_alignment=reference_alignment, surface=surface,
+                )
+
         offsets = alignment.station_offset_labels if station_offset_labels is None else station_offset_labels
         if offsets:
             from myalignment.render.station_offset_label_renderer import StationOffsetLabelRenderer
