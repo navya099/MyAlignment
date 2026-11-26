@@ -2,6 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field, replace
 import math
+from typing import TYPE_CHECKING
 
 from myalignment.surface.boundary import Boundary
 from myalignment.surface.boundary_clipping import clip_input_data, clip_mesh
@@ -13,6 +14,10 @@ from myalignment.surface.constrained_delaunay import ConstrainedDelaunayTriangul
 from myalignment.surface.tin_point import TinPoint
 from myalignment.surface.triangle import Triangle
 from myalignment.surface.delaunay import DelaunayTriangulator
+
+if TYPE_CHECKING:
+    from myalignment.surface.contour_line import ContourSet
+    from myalignment.surface.contour_style import ContourStyle
 
 import logging
 logger = logging.getLogger(__name__)
@@ -138,6 +143,12 @@ class TinSurface:
     # ================================================================
     # 표고/경사 조회
     # ================================================================
+    def generate_contours(self, style: ContourStyle | None = None) -> ContourSet:
+        """현재 TIN의 경계와 표고에서 주·보조·사용자 등고선을 추출한다."""
+        from myalignment.surface.contour_generator import ContourGenerator
+
+        return ContourGenerator.generate(self, style)
+
     def triangle_at(self, x: float, y: float) -> Triangle | None:
         for tri in self.triangles:
             if tri.contains_point(x, y, self.points):

@@ -69,3 +69,27 @@ site = SiteBuilder("Site").add_grading_group(group).build()
 assert site.total_daylight_length > 0
 assert all(isclose(hit.distance, 10, abs_tol=0.1) for hit in group.daylight_lines)
 ```
+
+## TIN 등고선 추출
+
+`TinSurface.generate_contours()`는 TIN 삼각형을 수평면으로 잘라 주·보조·사용자 등고선을 생성합니다. 표면의 숨김 경계나 떨어진 영역 사이에서는 선이 끊깁니다. 같은 표고의 평탄면은 테두리만 추출하고, 안장점에서 여러 선이 만나면 해당 점에서 분리합니다.
+
+```python
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.render.contour_3d_renderer import Contour3DPreview
+from myalignment.render.contour_renderer import ContourRenderer
+from myalignment.render.scene import Scene
+from myalignment.surface.contour_style import ContourStyle
+from myalignment.surface.tin_surface import TinSurface
+
+surface = TinSurface.from_points([
+    (0, 0, 0), (20, 0, 0), (20, 20, 0), (0, 20, 0), (10, 10, 10),
+])
+style = ContourStyle(major_interval=5, minor_interval=1, user_contours=(2.5,))
+contours = surface.generate_contours(style)
+assert contours.by_elevation(5)[0].closed
+DxfWriter(ContourRenderer.render(Scene(), contours, style)).write("contours.dxf")
+Contour3DPreview.preview(contours, "contours.html", "contours-3d.dxf", style)
+```
+
+등고선 간격과 표고는 m 단위입니다. 같은 표고에 여러 유형이 겹치면 사용자 지정, 주 등고선, 보조 등고선 순으로 하나만 선택합니다. 주 등고선 레이블의 간격은 선을 따라 측정합니다. `elevation_colors`에 표고와 ACI 색상의 쌍을 지정하면 각 등고선에 가장 가까운 기준 표고의 색상을 사용합니다.
