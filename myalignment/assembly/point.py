@@ -20,6 +20,7 @@ class AssemblyPoint:
     x: float = 0.0  # 횡방향 (m)
     z: float = 0.0  # 표고차 (m)
     is_parametric: bool = False
+    apply_aor: bool | None = field(default=None, kw_only=True)
 
     def __post_init__(self):
         if not (math.isfinite(self.x) and math.isfinite(self.z)):
@@ -32,7 +33,7 @@ class AssemblyPoint:
     def offset_by(self, dx: float, dz: float) -> "AssemblyPoint":
         return AssemblyPoint(
             code=self.code, x=self.x + dx, z=self.z + dz,
-            is_parametric=self.is_parametric,
+            is_parametric=self.is_parametric, apply_aor=self.apply_aor,
         )
 
     def __repr__(self) -> str:

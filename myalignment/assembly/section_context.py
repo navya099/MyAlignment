@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 import math
 from types import MappingProxyType
 from typing import TYPE_CHECKING
+
+from myalignment.surface.section import surface_section_segments
 
 if TYPE_CHECKING:
     from myalignment.alignment.alignment import Alignment
@@ -23,8 +25,12 @@ class SectionContext:
     target_offsets: Mapping[str, float] = field(default_factory=dict)
     values: Mapping[str, float | bool | None] = field(default_factory=dict)
 
+    surface_section_at: Callable[[str], Iterable[tuple[tuple[float, float], tuple[float, float]]]] | None = None
+
+    binding_station: float | None = field(default=None, kw_only=True)
+
     def __post_init__(self):
-        if not math.isfinite(self.station):
+        if not math.isfinite(self.station) or (self.binding_station is not None and not math.isfinite(self.binding_station)):
             raise ValueError("station must be finite")
         if self.base_elevation is not None and not math.isfinite(self.base_elevation):
             raise ValueError("base_elevation must be finite")
@@ -54,10 +60,15 @@ class SectionContext:
                 return None
             return surface.elevation_at(point.x, point.y)
 
+        def section(name: str):
+            surface = surfaces.get(name)
+            return surface_section_segments(surface, alignment, station) if surface is not None else ()
+
         return cls(
             station=station,
             base_elevation=profile.elevation_at(station) if profile is not None else 0.0,
             grade=profile.grade_at(station) if profile is not None else None,
             surface_elevation_at=sample if surfaces else None,
             target_offsets=target_offsets or {}, values=values or {},
+            surface_section_at=section if surfaces else None,
         )

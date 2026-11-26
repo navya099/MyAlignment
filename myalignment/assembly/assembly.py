@@ -38,6 +38,19 @@ class Assembly:
             self.center_subassembly, *self.left_subassemblies, *self.right_subassemblies,
         ))
 
+    @property
+    def uses_section_context(self) -> bool:
+        """측점별 횡단값을 참조하는 서브어셈블리가 있는지 확인한다."""
+        return any(sub.uses_section_context for sub in (
+            self.center_subassembly, *self.left_subassemblies, *self.right_subassemblies,
+        ) if sub is not None)
+
+    @property
+    def has_station_binding(self) -> bool:
+        return any(sub.has_station_binding for sub in (
+            self.center_subassembly, *self.left_subassemblies, *self.right_subassemblies,
+        ) if sub is not None)
+
     def generate_cross_section(
             self,
             target_mapping: TargetMapping | None = None, *,

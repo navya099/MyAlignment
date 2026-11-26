@@ -41,7 +41,7 @@ class SectionViewBuilder:
 
         design_elevation = profile.elevation_at(station) if profile is not None else None
         elevation = offset_elevation + (design_elevation if design_elevation is not None else 0.0)
-        grade = profile.grade_at(station) if profile is not None and region.assembly.has_conditional else None
+        grade = profile.grade_at(station) if profile is not None and region.assembly.uses_section_context else None
         section = CrossSection3D.from_region(
             alignment, station, region, elevation, design_elevation=design_elevation, grade=grade,
         )

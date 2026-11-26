@@ -2,6 +2,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, replace
+from typing import ClassVar
 
 from myalignment.assembly.link import AssemblyLink
 from myalignment.assembly.point import AssemblyPoint
@@ -16,11 +17,18 @@ class Subassembly(ABC):
     - 입력 매개변수로 로컬 형상 생성.
     - 기준점(origin) + 방향(azimuth)으로 배치.
     """
+    uses_section_context: ClassVar[bool] = False
+
     name: str = ""
     side: int = 1  # +1: 우측, -1: 좌측, 0: 중심
     apply_aor: bool = False  # 캔트 적용 여부
     # Target 파라미터 정의 (서브어셈블리별)
     _target_parameters: tuple[str, ...] = field(default_factory=tuple, repr=False)
+
+    @property
+    def has_station_binding(self) -> bool:
+        """측점 이동에 따라 바인딩 원본 측점을 보존해야 하는지 반환한다."""
+        return False
 
     @property
     def target_parameters(self) -> tuple[str, ...]:
@@ -57,8 +65,10 @@ class Subassembly(ABC):
             side_sign: 방향 (+1: 우측, -1: 좌측). None이면 self.side 사용.
         """
         sign = side_sign if side_sign is not None else (self.side or 1)
-        points, links = self.generate_geometry(target_mapping)
+        return self._transform_geometry(*self.generate_geometry(target_mapping), origin_x, origin_z, sign)
 
+    @staticmethod
+    def _transform_geometry(points, links, origin_x, origin_z, sign):
         placed = {
             p: replace(p, x=origin_x + sign * p.x, z=origin_z + p.z)
             for p in points

@@ -98,7 +98,7 @@ class Corridor3DMeshRenderer:
         labels = {}
         for sections in _sections(
             corridor, alignment, sample_frequency, z_offset, profile,
-            baseline_name=baseline_name, split_conditional=mode is not MeshMode.TRIANGULATED,
+            baseline_name=baseline_name, split_contextual=mode is not MeshMode.TRIANGULATED,
         ):
             if mode is MeshMode.LINK_BASED:
                 for label, primitive in _link_meshes(sections):

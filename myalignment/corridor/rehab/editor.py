@@ -94,6 +94,8 @@ def _merge_regions(corridor, command):
         raise ValueError("MERGE_REGION requires compatible cant and assembly orientation")
     if a.context_provider != b.context_provider:
         raise ValueError("MERGE_REGION requires the same section context provider")
+    if a._binding_station_map != b._binding_station_map:
+        raise ValueError("MERGE_REGION requires compatible binding stations")
     merged = replace(a, name=f"{a.name}_merged", end_station=b.end_station)
     return _replace_regions(corridor, (a_index, b_index), ((merged, a_baseline),))
 

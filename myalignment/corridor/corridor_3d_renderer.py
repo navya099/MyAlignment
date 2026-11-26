@@ -30,7 +30,7 @@ class Corridor3DRenderer:
     ) -> Scene3D:
         primitives = []
         longitudinal = Style3D(color=8, lineweight=0.15, layer="C-CORRIDOR-LONGITUDINAL")
-        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile, split_conditional=True):
+        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile, split_contextual=True):
             primitives.extend(cls._cross_links(sections))
             for first, second in zip(sections, sections[1:]):
                 check_section_topology(first, second)
@@ -54,7 +54,7 @@ class Corridor3DRenderer:
         offset_elevation: float = 0.0, *, profile: Profile | None = None,
     ) -> Scene3D:
         primitives = []
-        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile, split_conditional=True):
+        for sections in _sections(corridor, alignment, sample_frequency, offset_elevation, profile, split_contextual=True):
             mesh = CorridorMesh.from_sections(sections)
             groups = defaultdict(list)
             for triangle, code in zip(mesh.triangles, mesh.face_codes):
@@ -83,7 +83,7 @@ def _indexed_mesh(vertices, faces, style):
     )
 
 
-def _sections(corridor, alignment, frequency, offset, profile, *, baseline_name=None, split_conditional=False):
+def _sections(corridor, alignment, frequency, offset, profile, *, baseline_name=None, split_contextual=False):
     if frequency is not None and (not math.isfinite(frequency) or frequency <= 0):
         raise ValueError("sample_frequency must be finite and positive")
     if not math.isfinite(offset):
@@ -109,15 +109,15 @@ def _sections(corridor, alignment, frequency, offset, profile, *, baseline_name=
                     raise ValueError(f"Missing profile: {baseline.profile_name}")
 
         stations = region.sample_stations(frequency)
-        conditional = region.assembly.has_conditional
+        contextual = region.assembly.uses_section_context
         sections = []
         for station in stations:
             elevation = grade.elevation_at(station) if grade is not None else None
             section = CrossSection3D.from_region(
                 alignment, station, region, offset + (elevation if elevation is not None else 0.0),
-                design_elevation=elevation, grade=grade.grade_at(station) if grade is not None and conditional else None,
+                design_elevation=elevation, grade=grade.grade_at(station) if grade is not None and contextual else None,
             )
-            if split_conditional and conditional and sections and not same_section_topology(sections[-1], section):
+            if split_contextual and contextual and sections and not same_section_topology(sections[-1], section):
                 yield sections
                 sections = []
             sections.append(section)

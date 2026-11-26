@@ -167,6 +167,7 @@ class Corridor:
         regions = []
         affected = False
         providers = {}
+        binding_maps = {}
         for region in self.regions:
             baseline = self.baseline_for_region(region)
             name = region.baseline_name
@@ -182,9 +183,15 @@ class Corridor:
                     if key not in providers:
                         providers[key] = _remap_context_provider(provider, inverse, grade_scale)
                     provider = providers[key]
+                binding_map = region._binding_station_map
+                if getattr(region.assembly, "has_station_binding", False):
+                    key = id(binding_map)
+                    if key not in binding_maps:
+                        binding_maps[key] = _compose_station_maps(binding_map, inverse)
+                    binding_map = binding_maps[key]
                 region = replace(
                     map_range(region), baseline_name=name, _mirrored=region._mirrored ^ reverse,
-                    context_provider=provider,
+                    context_provider=provider, _binding_station_map=binding_map,
                     cant_curve=cant._map_stations(transform, reverse=reverse) if cant is not None else None,
                 )
             elif name != region.baseline_name:
@@ -361,5 +368,15 @@ def _remap_context_provider(provider, inverse, grade_scale):
         context = provider(inverse(station))
         grade = context.grade * grade_scale(station) if context.grade is not None else None
         return replace(context, station=station, grade=grade)
+
+    return mapped
+
+
+def _compose_station_maps(previous, inverse):
+    if previous is None:
+        return inverse
+
+    def mapped(station):
+        return previous(inverse(station))
 
     return mapped

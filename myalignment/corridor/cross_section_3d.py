@@ -41,7 +41,7 @@ class CrossSection3D:
         target_mapping: TargetMapping | None = None, offset_elevation: float = 0.0, *,
         context: SectionContext | None = None,
     ) -> CrossSection3D:
-        if assembly.has_conditional:
+        if assembly.uses_section_context:
             context = replace(context, station=station) if context is not None else SectionContext(station=station)
             points, links = assembly.generate_cross_section(target_mapping, context=context)
         else:
@@ -53,7 +53,7 @@ class CrossSection3D:
         cls, alignment: Alignment, station: float, region: CorridorRegion, offset_elevation: float = 0.0, *,
         design_elevation: float | None = None, grade: float | None = None,
     ) -> CrossSection3D:
-        if region.assembly.has_conditional and region.context_provider is None:
+        if region.assembly.uses_section_context and region.context_provider is None:
             context = SectionContext(station, design_elevation, grade)
             points, links = region.cross_section_at(station, context=context)
         else:

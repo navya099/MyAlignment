@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 class ConditionalSubassembly(Subassembly):
     """현재 접점에서 처음 충족하는 분기의 형상을 배치한다."""
 
+    uses_section_context = True
+
     name: str = "Conditional"
     branches: tuple[ConditionalBranch, ...] = ()
     surface_elevation: float | None = None
@@ -36,6 +38,10 @@ class ConditionalSubassembly(Subassembly):
             self.surface_elevation is not None and not math.isfinite(self.surface_elevation)
         ):
             raise ValueError("elevations must be finite")
+
+    @property
+    def has_station_binding(self) -> bool:
+        return any(branch.subassembly.has_station_binding for branch in self.branches)
 
     @property
     def target_parameters(self) -> tuple[str, ...]:

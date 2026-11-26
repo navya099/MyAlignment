@@ -346,3 +346,81 @@ assert sum(link.code is LinkCode.DITCH for link in links) == 2
 - 구배 조건의 단위는 소수 비율입니다. 표준 배수 어셈블리는 종단 구배의 절댓값이 0.02를 넘으면 배수로를 배치합니다. 사용자 조건은 `context_key`로 좁히고 `SectionContext.values`에 추가 값을 전달할 수 있습니다.
 - 수평 타깃은 `target_offsets`에 실제 객체 이름과 부호 있는 횡거를 전달합니다. `TARGET_REACHED`는 같은 쪽에서 현재 접점이 목표 횡거에 도달했는지 확인합니다. `slope_to_surface()`는 표고차에 따라 미리 설정한 사면 또는 평탄 형상을 선택합니다.
 - 링크 기반 3D 메시와 사각 스트립은 조건 변경으로 횡단 연결 구조가 달라지는 지점에서 구간을 나눕니다. 평면선형의 위치가 바뀌는 편집 후에는 기존 선형을 참조하는 컨텍스트 공급자를 새 선형에 맞춰 갱신합니다.
+
+## 동적 파라미터 서브어셈블리
+
+`ParametricLane`, `ParametricShoulder`, `ParametricSlope`는 일반 `AssemblyBuilder`와 조건부 분기에서 사용할 수 있습니다. `ParametricAssemblyBuilder`는 세 요소를 좌우에 한 번에 조립합니다. `with_params()`는 입력값과 계산 결과를 갱신한 새 객체를 반환합니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.assembly.assembly import AssemblyBuilder
+from myalignment.assembly.codes import LinkCode
+from myalignment.assembly.parameter.display import show_parameters
+from myalignment.assembly.parameterized.parametric_lane import ParametricLane
+from myalignment.assembly.parameterized.parametric_slope import ParametricSlope
+from myalignment.assembly.section_context import SectionContext
+from myalignment.corridor.corridor_builder import CorridorBuilder
+from myalignment.surface.tin_surface import TinSurface
+from myalignment.target.mapping import TargetMapping
+from myalignment.target.reference import TargetReference
+
+axis = AlignmentBuilder("Road").with_pi_coords([(0, 0), (20, 0)]).build()
+ground = TinSurface.from_points([(0, -12, -2), (20, -12, -2), (20, 12, -2), (0, 12, -2)])
+targets = TargetMapping((TargetReference("NaturalGround", object_name="Ground"),))
+lane = ParametricLane.create(width=3.5).with_params(width=4.0, slope=-0.025)
+slope = ParametricSlope.create(slope_ratio=1.5).with_params(target_surface="NaturalGround")
+assembly = AssemblyBuilder().add_right(lane).add_right(slope).build()
+
+def context_at(station):
+    return SectionContext.from_alignment(axis, station, surfaces={"Ground": ground})
+
+corridor = (
+    CorridorBuilder().add_baseline_from_alignment(axis)
+    .add_region_with_assembly("Road", 0, 20, assembly, targets=targets, context_provider=context_at)
+    .build()
+)
+_, links = corridor.cross_section_at(10)
+catch = next(link.end for link in links if link.code is LinkCode.SLOPE)
+assert catch.is_parametric and abs(catch.z - (-2.0)) < 1e-8
+print(show_parameters(lane))
+```
+
+- `ParameterSet.evaluate_computed()`는 이름 참조, 괄호와 산술식을 지원합니다. 계산 순서는 의존성으로 정합니다. 잘못된 참조, 순환 의존성, 0으로 나누기는 오류를 반환합니다. 수식은 계산값과 읽기 전용 출력값을 만들 수 있습니다. 측점별 수식에는 `station`, `base_elevation`, `grade` 및 `SectionContext.values`를 사용할 수 있습니다.
+- 차로·갓길의 경사는 소수 비율입니다. 차로의 `computed_slope_percent`는 퍼센트로, `computed_area`는 차로 길이 1m당 평면적으로 표시합니다. `apply_aor`는 차로 점의 캔트 적용 여부를 제어합니다.
+- 사면의 `target_surface`는 `TargetMapping`의 논리 이름입니다. 사면은 현재 접점에서 시작해 해당 TIN의 횡단 교선과 만나는 가장 가까운 점을 사용합니다. 타깃이 없거나 사면이 교차하지 않으면 지정 높이를 적용한 기본 하향 사면을 사용합니다.
+
+## 서브어셈블리 편구배와 캔트
+
+도로는 `SuperelevationBinding`을 연결하고 `apply_aor=True`를 설정하면 해당 횡단 세그먼트의 측점별 경사를 사용합니다. `ParametricAssemblyBuilder.with_superelevation()`은 좌우 차로에 대응하는 세그먼트를 자동으로 연결합니다. 임계 측점 사이의 경사는 선형 보간하며, 곡선 밖에서는 기본 경사를 적용합니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.assembly.parameterized.builder import ParametricAssemblyBuilder
+from myalignment.cant.curve import CantCriticalStation, CantCurve, CantPivotMethod
+from myalignment.corridor.corridor_builder import CorridorBuilder
+
+axis = (
+    AlignmentBuilder("Track").with_pi_coords([(0, 0), (40, 0)])
+    .as_rail_alignment(gauge=1.435).build()
+)
+cant = CantCurve(
+    start_station=0, end_station=40,
+    critical_stations=(CantCriticalStation(0, 0), CantCriticalStation(40, 0.15)),
+)
+track = (
+    ParametricAssemblyBuilder("Rail")
+    .with_cant((cant,), CantPivotMethod.LEFT_RAIL, gauge=1.435)
+    .build()
+)
+corridor = (
+    CorridorBuilder("Rail").add_baseline_from_alignment(axis)
+    .add_region("Track", 0, 40, track).build()
+)
+_, (rails,) = corridor.cross_section_at(20)
+assert abs(rails.start.z) < 1e-8
+assert abs(rails.end.z - 0.075) < 1e-8
+```
+
+- `CantCurve.cant_value`와 레일 표고 변위는 m입니다. `CantBinding.cant_at()`과 `default_cant`의 단위는 mm입니다. `rail_offsets_at()`은 중심선·좌측 레일·우측 레일 피벗에 맞춰 좌우 변위를 m로 반환합니다.
+- `ParametricAssemblyBuilder.with_cant()`는 중심 레일 서브어셈블리를 생성합니다. 개별 차로나 레일은 `with_station()`으로 평가한 파라미터와 형상을 미리 확인할 수 있습니다.
+- 코리더는 실제 기하 측점에서 바인딩을 평가합니다. 레일에 자체 바인딩이 있으면 그 레일의 표고에 영역 캔트를 다시 더하지 않습니다. 선형을 반전하면 좌우 레일 코드가 바뀌며 대응 위치의 물리적 표고는 유지됩니다.

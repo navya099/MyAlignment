@@ -28,6 +28,7 @@ class CorridorRegion:
     cant_curve: CantCurve | None = None
     baseline_name: str | None = field(default=None, kw_only=True)
     context_provider: Callable[[float], SectionContext] | None = field(default=None, kw_only=True, repr=False)
+    _binding_station_map: Callable[[float], float] | None = field(default=None, kw_only=True, repr=False)
     _mirrored: bool = field(default=False, repr=False, kw_only=True)
 
     def __post_init__(self):
@@ -59,10 +60,14 @@ class CorridorRegion:
         return stations
 
     def cross_section_at(self, station: float, *, context: SectionContext | None = None):
-        if self.assembly.has_conditional:
+        if self.assembly is None:
+            return (), ()
+        if self.assembly.uses_section_context:
             if context is None and self.context_provider is not None:
                 context = self.context_provider(station)
-            context = replace(context, station=station) if context is not None else SectionContext(station=station)
+            context = context or SectionContext(station=station)
+            binding_station = self._binding_station_map(station) if self._binding_station_map else context.binding_station
+            context = replace(context, station=station, binding_station=binding_station)
             points, links = self.assembly.generate_cross_section(self.target_mapping, context=context)
         else:
             points, links = self.assembly.generate_cross_section(self.target_mapping)
@@ -96,7 +101,15 @@ class CorridorRegion:
         left_delta, right_delta = cant.left_rail_delta, cant.right_rail_delta
         slope = (right_delta - left_delta) / (right_x - left_x)
 
+        section_points = dict.fromkeys(points)
+        for link in links:
+            section_points[link.start] = None
+            section_points[link.end] = None
+        fixed = {(round(p.x, 9), round(p.z, 9)) for p in section_points if p.apply_aor is False}
+
         def apply_cant(point):
+            if fixed and (round(point.x, 9), round(point.z, 9)) in fixed:
+                return point
             if self.cant_curve.pivot_method is CantPivotMethod.CENTERLINE:
                 if point.x < 0:
                     delta = point.x * left_delta / left_x
@@ -106,10 +119,6 @@ class CorridorRegion:
                 delta = left_delta + (point.x - left_x) * slope
             return replace(point, z=point.z + delta)
 
-        section_points = dict.fromkeys(points)
-        for link in links:
-            section_points[link.start] = None
-            section_points[link.end] = None
         updated = {point: apply_cant(point) for point in section_points}
         return (
             tuple(updated[p] for p in points),
