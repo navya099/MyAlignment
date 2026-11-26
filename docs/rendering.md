@@ -148,3 +148,28 @@ DriveViewPreview.preview(axis, config, "drive.html", corridor)
 - 카메라 높이는 `surface_elevation_func(x, y)`, 선택한 종단, 0m 순서로 기준 표고를 구한 뒤 `y_offset`을 더합니다. 코리더에 지정한 종단이 하나면 미리보기가 해당 종단을 선택합니다. 여러 종단이 있으면 `baseline_name`이나 `profile`을 지정할 수 있습니다.
 - HTML에서 재생·일시정지, 위치 탐색, 재생 속도 조절과 전체 보기를 사용할 수 있습니다. 자유 시점에서는 드래그로 주시 방향을 바꿀 수 있습니다. 브라우저의 실제 시야각은 `field_of_view`를 사용합니다.
 - 카메라 프레임이 필요하면 `DriveViewGenerator.generate()`를 호출합니다. `DrivePath.at_time()`은 초 단위로 프레임을 보간합니다. `DriveView3DRenderer`는 경로와 방향선을 별도 장면에 그릴 때 사용합니다.
+
+## 2D Scene을 SVG로 내보내기
+
+`SvgWriter`와 `SvgExporter`는 평면도, 종단 뷰, 횡단 뷰 등 기존 2D `Scene`을 SVG로 저장합니다. 선, 열린·닫힌 폴리라인, 원, 원호와 회전·여러 줄 텍스트를 지원합니다. 레이어 이름, 표시 상태, ACI 색상과 표준 선종류도 반영합니다.
+
+```python
+from myalignment.alignment.alignment_builder import AlignmentBuilder
+from myalignment.export.svg_composer import SvgExportComposer
+from myalignment.export.svg_gallery import SvgGallery
+from myalignment.export.svg_style import SvgStyle
+from myalignment.render.alignment_renderer import AlignmentRenderer
+
+axis = (
+    AlignmentBuilder("Main").with_pi_coords([(0, 0), (40, 0), (70, 30)])
+    .with_radii([None, 12, None]).build()
+)
+scene = AlignmentRenderer.render_plan(axis)
+outputs = SvgExportComposer.export_all(
+    {"평면도": scene, "밝은 글꼴": scene}, "svg",
+    {"평면도": SvgStyle.print(), "밝은 글꼴": SvgStyle.dark()},
+)
+SvgGallery.create(outputs.items(), "svg/index.html", title="평면도 비교")
+```
+
+단일 도면은 `SvgExporter.export(scene, "plan.svg", SvgStyle.web())`로 저장할 수 있습니다. 기본값은 A4 가로, 10mm 여백, 자동 맞춤입니다. 자동 맞춤은 표시 중인 객체만 기준으로 하며, 텍스트 범위는 글꼴 크기로 추정하므로 실제 폭은 브라우저 글꼴에 따라 달라집니다. `auto_fit_viewport=False`에서는 1 도면 단위가 1mm에 대응하고 CAD 원점은 페이지 왼쪽 아래 여백에 놓입니다.

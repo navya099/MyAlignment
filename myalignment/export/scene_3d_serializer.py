@@ -1,14 +1,9 @@
-from colorsys import hsv_to_rgb
 import json
 
+from myalignment.export.aci_color_map import AciColorMap
 from myalignment.render.primitives_3d import Primitive3D, PrimitiveType3D
 from myalignment.render.scene_3d import Scene3D
 
-
-_ACI_COLORS = (
-    "#CCCCCC", "#FF0000", "#FFFF00", "#00FF00", "#00FFFF",
-    "#0000FF", "#FF00FF", "#FFFFFF", "#808080", "#C0C0C0",
-)
 
 
 class Scene3DSerializer:
@@ -54,14 +49,4 @@ class Scene3DSerializer:
 
     @staticmethod
     def _color_to_hex(aci_color: int) -> str:
-        if 0 <= aci_color < len(_ACI_COLORS):
-            return _ACI_COLORS[aci_color]
-        if 10 <= aci_color <= 249:
-            hue, shade = divmod(aci_color - 10, 10)
-            value = (255, 165, 127, 76, 38)[shade // 2]
-            rgb = hsv_to_rgb(hue / 24, 0.5 if shade % 2 else 1.0, value)
-            return "#" + "".join(f"{int(channel):02X}" for channel in rgb)
-        if 250 <= aci_color <= 255:
-            gray = (51, 80, 105, 130, 190, 255)[aci_color - 250]
-            return f"#{gray:02X}{gray:02X}{gray:02X}"
-        return "#CCCCCC"
+        return "#CCCCCC" if aci_color in (0, 256) else AciColorMap.to_css(aci_color, dark_mode=True)
