@@ -194,3 +194,32 @@ assert hatches.total_area("cut") == 75.0
 패턴은 단색, 대각선, 교차, 수평선, 수직선과 점을 지원합니다. `show_net=True`는 두 영역을 `net_color`로 표시하며 `HatchCollection.net_area`는 절토 면적에서 성토 면적을 뺀 값입니다. SVG에는 불투명도를 보존하고 DXF R12의 단색 채우기는 불투명한 `SOLID` 삼각형으로 저장합니다.
 
 `sample_step`은 곡선 해치 외곽의 샘플 간격을 정합니다. 면적은 샘플로 구성한 종단면의 면적이며 체적은 그 면적에 일정한 `road_width`를 곱한 추정치입니다. 도로 폭을 생략하면 10m를 사용합니다.
+
+## 절토·성토와 계획고·지반고 밴드
+
+`ProfileViewBand(BandType.EARTHWORK)`를 추가하면 계획 종단과 현황 종단이 겹치는 구간에 측점, 계획고(FG), 지반고(EG), 절토 깊이(CUT), 성토 깊이(FILL)를 표시합니다. `EarthworkBandStyle.minimal()`은 측점과 절토·성토만 표시하고, `detailed()`는 부호가 있는 표고차(FG − EG)를 추가합니다.
+
+```python
+from myalignment.export.dxf_writer import DxfWriter
+from myalignment.profile import EarthworkBandGenerator, EarthworkBandStyle, ProfileBuilder
+from myalignment.profile.view_band import BandType, ProfileViewBand
+from myalignment.profile.view_style import ProfileViewStyle
+from myalignment.render.profile_view_renderer import ProfileViewRenderer
+
+fg = ProfileBuilder("FG").add_tangent(1000, 1100, 10, 16).build()
+eg = ProfileBuilder("EG").add_tangent(1000, 1100, 13, 13).build()
+band_style = EarthworkBandStyle.detailed()
+scene = ProfileViewRenderer.render(
+    [fg, eg], "Road", ProfileViewStyle(vertical_exaggeration=3),
+    [ProfileViewBand(BandType.EARTHWORK, gap=2)],
+    earthwork_band_style=band_style, render_labels=False,
+)
+DxfWriter(scene).write("earthwork-band.dxf")
+
+data = EarthworkBandGenerator.generate(fg, eg, band_style, road_width=8)
+assert data.total_cut_volume == data.total_fill_volume == 600.0
+```
+
+- 종단 이름이 다르면 `profile_names=("설계 종단", "현황 종단")`으로 FG, EG 순서로 지정합니다. 렌더러의 `fg_profile_name`, `eg_profile_name`으로 공통 이름을 지정할 수도 있습니다. 이름을 생략하면 기본 이름 `FG`, `EG`와 종단 유형을 순서대로 확인합니다.
+- `sample_interval`의 기본값은 50m입니다. 공통 구간의 시작점에서 간격을 계산하고 끝점을 포함합니다. 분할 뷰는 이 간격을 유지하면서 패널 경계에 값을 추가합니다. `alignment=`을 전달하면 측점 행에 측점 방정식을 적용합니다.
+- `EarthworkBandGenerator.generate()`의 체적은 종단면 면적에 일정한 폭을 곱한 추정치입니다. `net_volume`은 성토량에서 절토량을 뺀 값입니다.

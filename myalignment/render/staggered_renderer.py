@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from dataclasses import replace
 
 from cadgeom import Point2d
@@ -13,13 +14,16 @@ class StaggeredRenderer:
     """Scene의 텍스트를 배치하고 해결되지 않은 레이블 ID를 기록한다."""
 
     @classmethod
-    def apply_stagger(cls, scene: Scene, config: StaggerConfig) -> Scene:
+    def apply_stagger(
+        cls, scene: Scene, config: StaggerConfig, *, fixed_text_layers: Collection[str] = (),
+    ) -> Scene:
         if not config.is_active:
             return scene
 
         boxes = []
         for index, primitive in enumerate(scene.primitives):
-            if primitive.type is not PrimitiveType.TEXT or not primitive.points or not primitive.text:
+            if (primitive.type is not PrimitiveType.TEXT or not primitive.points or not primitive.text
+                    or primitive.style.layer in fixed_text_layers):
                 continue
             point = primitive.points[0]
             boxes.append((index, LabelBox.from_text(

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from myalignment.profile.band_style import GeometryBandStyle, VerticalGeometryBandStyle
 from myalignment.profile.cant_band_style import CantBandStyle
+from myalignment.profile.earthwork_band_generator import EarthworkBandGenerator
+from myalignment.profile.earthwork_band_style import EarthworkBandStyle
 from myalignment.profile.grade_break_style import GradeBreakLabelStyle
 from myalignment.profile.hatch_generator import ProfileHatchGenerator
 from myalignment.profile.hatch_style import ProfileHatchStyle
@@ -17,6 +19,7 @@ from myalignment.profile.view_style import ProfileViewStyle
 from myalignment.rail.rail_alignment import RailAlignment
 from myalignment.render.cant_band_renderer import CantBandRenderer
 from myalignment.render.depth_label_renderer import DepthLabelRenderer
+from myalignment.render.earthwork_band_renderer import EarthworkBandRenderer
 from myalignment.render.grade_break_label_renderer import GradeBreakLabelRenderer
 from myalignment.render.geometry_band_renderer import HorizontalGeometryBandRenderer
 from myalignment.render.primitives import Primitive, Style
@@ -67,11 +70,18 @@ def _elevations(profile: Profile, station_range: tuple[float, float]):
                 yield entity.elevation_at(station)
 
 
-def _hatch_profile(profiles, name, code, profile_type):
+def _profile_by_name_or_type(profiles, name, code, profile_type):
     if name is not None:
         return next((profile for profile in profiles if profile.name == name), None)
     named = next((profile for profile in profiles if profile.name == code), None)
     return named if named is not None else next((p for p in profiles if p.profile_type is profile_type), None)
+
+
+def _profile_pair(profiles, fg_name, eg_name):
+    design = _profile_by_name_or_type(profiles, fg_name, "FG", ProfileType.FG)
+    candidates = tuple(profile for profile in profiles if profile is not design)
+    existing = _profile_by_name_or_type(candidates, eg_name, "EG", ProfileType.EG)
+    return design, existing
 
 
 class ProfileViewRenderer:
@@ -95,6 +105,8 @@ class ProfileViewRenderer:
         geometry_band_style: GeometryBandStyle | None = None,
         vertical_geometry_band_style: VerticalGeometryBandStyle | None = None,
         cant_band_style: CantBandStyle | None = None,
+        earthwork_band_style: EarthworkBandStyle | None = None,
+        road_width: float = 10.0,
         labels: Sequence[StationElevationLabel] | None = None,
         depth_labels: Sequence[DepthLabel] | None = None,
         render_labels: bool = True,
@@ -114,6 +126,7 @@ class ProfileViewRenderer:
         depth_labels에는 두 원시 측점 사이를 측정하는 레이블을 전달한다.
         station_range를 지정하면 해당 원시 측점 구간만 그린다.
         projections에는 원시 측점과 표고로 변환한 객체를 전달한다.
+        EARTHWORK 밴드의 profile_names는 계획·현황 종단의 이름을 순서대로 지정한다.
         """
         scene = Scene() if scene is None else scene
         valid_profiles = tuple(profile for profile in profiles if profile.is_valid)
@@ -169,9 +182,7 @@ class ProfileViewRenderer:
         scene = scene.add_layer(Layer(cls.GRID_LAYER, color=8)).add_all(grid)
 
         if hatches is None and hatch_style is not None:
-            design = _hatch_profile(valid_profiles, fg_profile_name, "FG", ProfileType.FG)
-            candidates = tuple(profile for profile in valid_profiles if profile is not design)
-            existing = _hatch_profile(candidates, eg_profile_name, "EG", ProfileType.EG)
+            design, existing = _profile_pair(valid_profiles, fg_profile_name, eg_profile_name)
             if design is not None and existing is not None:
                 hatches = ProfileHatchGenerator.generate(design, existing, hatch_style, station_range=(start, end))
         if hatches is not None:
@@ -197,16 +208,39 @@ class ProfileViewRenderer:
                     scene, profile, grade_break_style, style.vertical_exaggeration, station_range=station_range,
                 )
 
+        fixed_text_layers = set()
         if bands:
             geometry_style = geometry_band_style or GeometryBandStyle()
             vertical_style = vertical_geometry_band_style or VerticalGeometryBandStyle()
             cant_style = cant_band_style or CantBandStyle()
+            earthwork_style = earthwork_band_style or EarthworkBandStyle.standard()
             stations = _ticks(start, end, style.grid_major_interval_station)
             edges = {"bottom": low, "top": high}
             for band in bands:
                 location = band.location or style.band_location
                 direction = 1 if location == "top" else -1
                 base = edges[location] + direction * band.gap
+                if band.band_type is BandType.EARTHWORK:
+                    if not earthwork_style.total_height:
+                        continue
+                    names = band.profile_names
+                    fg_name = names[0] if names else fg_profile_name
+                    eg_name = names[1] if len(names) > 1 else eg_profile_name
+                    design, existing = _profile_pair(valid_profiles, fg_name, eg_name)
+                    if design is None or existing is None:
+                        continue
+                    data = EarthworkBandGenerator.generate(
+                        design, existing, earthwork_style, road_width, station_range=(start, end),
+                    )
+                    outer_edge = base + direction * earthwork_style.total_height
+                    rendered = EarthworkBandRenderer.render(
+                        scene, data, style, max(base, outer_edge), earthwork_style, alignment=alignment,
+                    )
+                    if rendered is not scene:
+                        edges[location] = outer_edge + direction * earthwork_style.band_gap
+                        fixed_text_layers.add(earthwork_style.layer)
+                        scene = rendered
+                    continue
                 if band.band_type is BandType.HORIZONTAL_GEOMETRY and alignment is not None:
                     outer_edge = base + direction * geometry_style.band_height
                     scene = HorizontalGeometryBandRenderer.render(
@@ -270,7 +304,9 @@ class ProfileViewRenderer:
         })
         if stagger_config is None and custom_grade_breaks:
             stagger_config = StaggerConfigPresets.up_increment(base=3.0, increment=2.0)
-        return StaggeredRenderer.apply_stagger(scene, stagger_config) if stagger_config is not None else scene
+        if stagger_config is not None:
+            return StaggeredRenderer.apply_stagger(scene, stagger_config, fixed_text_layers=fixed_text_layers)
+        return scene
 
     @classmethod
     def _band_primitives(

@@ -8,6 +8,7 @@ class BandType(Enum):
     VERTICAL_GEOMETRY = "VerticalGeom"
     HORIZONTAL_GEOMETRY = "HorizontalGeom"
     CANT_DATA = "CantData"
+    EARTHWORK = "Earthwork"
 
 
 @dataclass(frozen=True, slots=True)
