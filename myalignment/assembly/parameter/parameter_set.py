@@ -10,7 +10,8 @@ from myalignment.assembly.parameter.parameter import Parameter, ParameterValue
 from myalignment.assembly.parameter.parameter_type import ParameterType
 
 _BINARY = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
-           ast.Div: operator.truediv, ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod}
+           ast.Div: operator.truediv, ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+           ast.Pow: operator.pow}
 _UNARY = {ast.UAdd: operator.pos, ast.USub: operator.neg}
 
 
@@ -30,6 +31,15 @@ def _evaluate(node, lookup):
     if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY:
         return _UNARY[type(node.op)](_evaluate(node.operand, lookup))
     raise ValueError("only arithmetic expressions and variable names are supported")
+
+
+def _evaluate_formula(expression, lookup):
+    try:
+        if not isinstance(expression, str):
+            raise ValueError("formula must be a string")
+        return _evaluate(ast.parse(expression.strip(), mode="eval").body, lookup)
+    except (ArithmeticError, SyntaxError, RecursionError) as error:
+        raise ValueError(str(error)) from error
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,9 +101,8 @@ class ParameterSet:
             if name not in resolved:
                 active.add(name)
                 try:
-                    expression = ast.parse(param.expression.strip(), mode="eval")
-                    resolved[name] = replace(param, value=_evaluate(expression.body, lookup))
-                except (ArithmeticError, SyntaxError, ValueError, RecursionError) as error:
+                    resolved[name] = replace(param, value=_evaluate_formula(param.expression, lookup))
+                except ValueError as error:
                     raise ValueError(f"{name}: {error}") from error
                 finally:
                     active.remove(name)

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from myalignment.assembly.conditional.branch import ConditionalBranch
 from myalignment.assembly.conditional.condition import Condition
 from myalignment.assembly.conditional.condition_type import ConditionType
+from myalignment.assembly.parameter.parameterized import ParameterizedSubassembly
 from myalignment.assembly.subassembly import Subassembly
 from myalignment.target.target_type import TargetType
 
@@ -57,6 +58,10 @@ class ConditionalSubassembly(Subassembly):
         subassembly = branch.subassembly
         if isinstance(subassembly, ConditionalSubassembly):
             return subassembly.generate_geometry(target_mapping, context=context)
+        if isinstance(subassembly, ParameterizedSubassembly):
+            return subassembly._geometry_at(
+                subassembly.evaluated_parameters(context), target_mapping, context, 0.0, 0.0, subassembly.side or 1,
+            )
         return subassembly.generate_geometry(target_mapping)
 
     def place_at(

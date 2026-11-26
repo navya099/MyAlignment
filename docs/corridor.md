@@ -458,3 +458,36 @@ assert abs(rails.end.z - 0.075) < 1e-8
 - `CantCurve.cant_value`와 레일 표고 변위는 m입니다. `CantBinding.cant_at()`과 `default_cant`의 단위는 mm입니다. `rail_offsets_at()`은 중심선·좌측 레일·우측 레일 피벗에 맞춰 좌우 변위를 m로 반환합니다.
 - `ParametricAssemblyBuilder.with_cant()`는 중심 레일 서브어셈블리를 생성합니다. 개별 차로나 레일은 `with_station()`으로 평가한 파라미터와 형상을 미리 확인할 수 있습니다.
 - 코리더는 실제 기하 측점에서 바인딩을 평가합니다. 레일에 자체 바인딩이 있으면 그 레일의 표고에 영역 캔트를 다시 더하지 않습니다. 선형을 반전하면 좌우 레일 코드가 바뀌며 대응 위치의 물리적 표고는 유지됩니다.
+
+## 사용자 정의 서브어셈블리
+
+`CustomSubassemblyBuilder`로 입력값과 계산값, 점 좌표와 링크를 선언할 수 있습니다. 점과 링크의 인덱스는 추가 순서대로 0부터 시작합니다. 작성한 부품은 `AssemblyBuilder`로 좌우에 배치하거나 조건부 서브어셈블리의 분기로 사용할 수 있습니다.
+
+```python
+from myalignment.assembly import AssemblyBuilder
+from myalignment.assembly.codes import LinkCode, PointCode
+from myalignment.assembly.custom import CustomSubassemblyBuilder, CustomSubassemblyLibrary
+
+path = (
+    CustomSubassemblyBuilder("Service Path")
+    .with_parameter("width", 2.0, unit="m", min_value=0.5)
+    .with_parameter("slope", -0.02, unit="m/m")
+    .with_computed("drop", "width * slope", unit="m")
+    .with_output("crossfall_percent", "slope * 100", unit="%")
+    .add_point(PointCode.SIDEWALK_IN)
+    .add_point(PointCode.SIDEWALK_OUT, x="width", z="drop")
+    .add_link(0, 1, LinkCode.PAVEMENT)
+    .build()
+)
+library = CustomSubassemblyLibrary.standard().register(path)
+wider = library.get("Service Path").with_params(width=3)
+section = AssemblyBuilder().add_right(wider).build()
+_, links = section.generate_cross_section()
+assert links[0].end.x == 3.0
+assert links[0].end.z == -0.06
+assert wider.param_set.outputs()["crossfall_percent"] == -2.0
+```
+
+- 좌표 수식은 입력·계산·출력 파라미터와 산술 연산 `+`, `-`, `*`, `/`, `//`, `%`, `**`를 지원합니다. 동적 좌표에는 `station`, `grade`, `base_elevation`, `SectionContext.values`를 참조할 수 있습니다. `grade`처럼 컨텍스트가 필요한 수식은 `build(context=...)`에 초기 검증용 값을 전달합니다. 코리더는 횡단면을 생성할 때 해당 측점의 컨텍스트에서 수식을 다시 계산합니다.
+- `add_shape()`는 하나의 닫힌 경계를 이루는 링크에 형상 코드를 지정합니다. `QuantityTakeoff`는 그 코드로 재료 물량을 집계합니다. `custom_lane()`은 닫힌 포장층을 정의하는 예제입니다.
+- `presets`에는 차로, 갓길·연석, V형 배수로, 사면, 도시도로 단면이 있습니다. `custom_slope()`는 `TargetDTM`으로 연결된 지표면과의 교점을 사용합니다. 타깃을 연결하지 않았거나 교점을 찾지 못하면 지정한 높이와 사면비로 배치합니다.
