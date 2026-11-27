@@ -2,6 +2,25 @@
 
 `ProfileBuilder`로 설계 종단(`ProfileType.FG`)과 현황 종단(`ProfileType.EG`)을 구성합니다. 입력 측점은 선형의 원시 측점과 맞춥니다. 인접 종단 요소의 경계 측점과 표고는 연속이어야 합니다. 접선 연결부의 구배까지 연속이어야 하는 모델은 `build(validate_grades=True)`로 검증할 수 있습니다.
 
+## 측점·표고 데이터 일괄 입력
+
+`Profile.from_points()`는 `(원시 측점, 표고)` 행을 받아 인접 점을 직선으로 연결합니다. 목록, 제너레이터, `zip(stations, elevations)`을 전달할 수 있습니다. CSV는 `Profile.from_csv()`로 직접 읽습니다.
+
+```python
+from pathlib import Path
+
+from myalignment.alignment import Alignment
+from myalignment.profile import Profile
+
+path = Path("ground.csv")
+path.write_text("station,elevation\n1000,95\n1050,97\n1100,96\n", encoding="utf-8")
+ground = Profile.from_csv(path, name="Ground")
+axis = Alignment.from_pi_coords([(0, 0), (100, 0)], start_station=1000, profiles=[ground])
+assert axis.eg_profile.elevation_at(1025) == 96
+```
+
+기본 CSV 헤더는 `station`, `elevation`입니다. 다른 헤더나 구분자는 `station_column`, `elevation_column`, `delimiter`로 지정합니다. 두 메서드 모두 기본값으로 현황 종단(EG)을 만듭니다. 원시 측점은 두 개 이상이어야 하며 중복 없이 오름차순으로 입력합니다. 기존 빌더에 접선 구간을 일괄 추가하려면 `ProfileBuilder.add_points()`를 사용합니다.
+
 ## 접선과 수직곡선
 
 다음 예제는 접선–대칭 포물선–접선으로 구성됩니다. STA 150의 PVI 표고는 102m이며, 포물선의 같은 측점에서 표고는 101.7m입니다.

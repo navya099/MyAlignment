@@ -1,8 +1,11 @@
 # profile/profile.py
 from __future__ import annotations
+from collections.abc import Iterable
+import csv
 from dataclasses import dataclass, field, replace
 import math
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Self
 
 from myalignment.profile.label_set import ProfileLabelSet
 from myalignment.profile.label_style import ProfileLabelStyle
@@ -20,6 +23,28 @@ if TYPE_CHECKING:
     from myalignment.alignment.station_map import StationMap
 
 
+def _point_tangents(points: Iterable[tuple[float | str, float | str]]) -> list[ProfileTangent]:
+    tangents = []
+    previous = None
+    for index, row in enumerate(points, start=1):
+        if isinstance(row, (str, bytes)):
+            raise ValueError(f"Profile row {index}: expected a numeric station and elevation")
+        try:
+            station, elevation = row
+            station, elevation = float(station), float(elevation)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(f"Profile row {index}: expected a numeric station and elevation") from error
+        if not math.isfinite(station) or not math.isfinite(elevation):
+            raise ValueError(f"Profile row {index}: station and elevation must be finite")
+        if previous is not None:
+            if station <= previous[0]:
+                raise ValueError(f"Profile row {index}: raw stations must be strictly increasing")
+            tangents.append(ProfileTangent.create(previous[0], station, previous[1], elevation))
+        previous = station, elevation
+    if not tangents:
+        raise ValueError("At least two profile points are required")
+    return tangents
+
 
 @dataclass(frozen=True, slots=True)
 class Profile:
@@ -36,6 +61,35 @@ class Profile:
     entities: ProfileEntityCollection = field(default_factory=ProfileEntityCollection)
 
     label_set: ProfileLabelSet = field(default_factory=ProfileLabelSet.standard, kw_only=True)
+
+    @classmethod
+    def from_points(
+        cls, points: Iterable[tuple[float | str, float | str]], *, name: str = "Profile1",
+        profile_type: ProfileType = ProfileType.EG,
+    ) -> Self:
+        """오름차순 (원시 측점, 표고) 행을 접선으로 연결한다."""
+        entities = ProfileEntityCollection(tuple(_point_tangents(points)))
+        return cls(name=name, profile_type=profile_type, entities=entities)
+
+    @classmethod
+    def from_csv(
+        cls, path: str | Path, *, name: str = "Profile1", profile_type: ProfileType = ProfileType.EG,
+        station_column: str = "station", elevation_column: str = "elevation",
+        delimiter: str = ",", encoding: str = "utf-8-sig",
+    ) -> Self:
+        """헤더가 있는 CSV에서 원시 측점과 표고 열을 읽는다."""
+        if not station_column or not elevation_column or station_column == elevation_column:
+            raise ValueError("station_column and elevation_column must be distinct nonempty names")
+        with Path(path).open(encoding=encoding, newline="") as stream:
+            reader = csv.DictReader(stream, delimiter=delimiter)
+            header = reader.fieldnames or []
+            for column in (station_column, elevation_column):
+                if header.count(column) != 1:
+                    raise ValueError(f"CSV must contain exactly one {column!r} column")
+            return cls.from_points(
+                ((row[station_column], row[elevation_column]) for row in reader),
+                name=name, profile_type=profile_type,
+            )
 
     def with_label_set(self, label_set: ProfileLabelSet) -> "Profile":
         return replace(self, label_set=label_set)
@@ -156,6 +210,11 @@ class ProfileBuilder:
                 end_elevation=end_elevation,
             )
         )
+        return self
+
+    def add_points(self, points: Iterable[tuple[float | str, float | str]]) -> Self:
+        """오름차순 (원시 측점, 표고) 행을 일괄 접선으로 추가한다."""
+        self._entities.extend(_point_tangents(points))
         return self
 
     def add_symmetric_parabola(

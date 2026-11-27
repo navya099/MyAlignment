@@ -4,6 +4,23 @@
 
 빌더의 설정 메서드는 같은 인스턴스를 수정하고 반환합니다. 설정이 독립적인 여러 선형을 만들 때는 선형마다 새 빌더를 생성하세요. 같은 빌더에서 PI 개수를 바꾸면 생략한 제원의 기본값은 새 개수에 맞춰 적용됩니다. 직접 지정한 반경과 완화곡선장 목록도 새 PI 개수에 맞게 갱신하세요.
 
+## PI 좌표에서 바로 생성
+
+`Alignment.from_pi_coords()`에 좌표 목록이나 제너레이터를 전달하면 선형을 바로 만들 수 있습니다. 반경을 생략하면 인접 PI를 직선으로 연결합니다. 기존 종단은 `profiles=`로 한꺼번에 연결할 수 있습니다.
+
+```python
+from myalignment.alignment import Alignment
+
+axis = Alignment.from_pi_coords(
+    [(0, 0), (150, 0), (150, 150)], name="Main",
+    radii=[None, 40, None], entry_lengths=[0, 12, 0], start_station=1000,
+)
+assert axis.start_station == 1000
+assert len(axis.entities) == 5
+```
+
+`entry_lengths`만 전달하면 진입과 진출에 같은 완화곡선장을 사용합니다. 비대칭 완화곡선에는 `exit_lengths`도 전달합니다.
+
 ## 좌표 조회와 편집
 
 ```python

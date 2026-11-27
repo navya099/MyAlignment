@@ -1,5 +1,6 @@
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
+import math
 from typing import Iterator, Self
 
 from cadgeom import Point2d
@@ -20,6 +21,8 @@ from myalignment.core.projection_result import ProjectionResult
 from myalignment.core.station_offset import StationOffsetPoint
 from myalignment.enitity.alignment_entity import AlignmentEntity
 from myalignment.enitity.entity_collection import AlignmentEntityCollection
+from myalignment.enitity.entity_factory import build_alignment_entities
+from myalignment.enum.spiraltype import SpiralType
 from myalignment.profile.profiletype import ProfileType
 from myalignment.quantity.takeoff import TakeoffResult, QuantityTakeoff
 from myalignment.structure.structurecollection import StructureCollection
@@ -69,6 +72,40 @@ class Alignment:
     def __post_init__(self):
         object.__setattr__(self, "corridors", tuple(self.corridors))
         object.__setattr__(self, "station_offset_labels", tuple(self.station_offset_labels))
+
+    @classmethod
+    def from_pi_coords(
+        cls, coords: Iterable[tuple[float | str, float | str] | Point2d], *, name: str = "Alignment1",
+        radii: Iterable[float | None] | None = None, start_station: float = 0.0,
+        entry_lengths: Iterable[float] | None = None, exit_lengths: Iterable[float] | None = None,
+        spiral_type: SpiralType = SpiralType.Clothoid, profiles: Iterable[Profile] = (),
+    ) -> Self:
+        """PI 좌표와 선택한 곡선 제원으로 선형을 한 번에 만든다.
+
+        반경을 생략하면 모든 PI를 직선으로 연결한다. 좌표와 곡선 제원은 PI 순서로 입력한다.
+        진입 완화곡선장만 입력하면 같은 값을 진출에 적용한다.
+        """
+        if not math.isfinite(start_station):
+            raise ValueError("start_station must be finite")
+        points = []
+        for index, row in enumerate(coords, start=1):
+            if isinstance(row, (str, bytes)):
+                raise ValueError(f"PI row {index}: expected two numeric coordinates")
+            try:
+                x, y = (row.x, row.y) if isinstance(row, Point2d) else row
+                x, y = float(x), float(y)
+            except (TypeError, ValueError, OverflowError) as error:
+                raise ValueError(f"PI row {index}: expected two numeric coordinates") from error
+            if not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError(f"PI row {index}: coordinates must be finite")
+            points.append(Point2d(x, y))
+        entry = None if entry_lengths is None else list(entry_lengths)
+        exit_ = entry if exit_lengths is None else list(exit_lengths)
+        entities = build_alignment_entities(
+            points, [None] * len(points) if radii is None else list(radii),
+            start_station=start_station, spiral_type=spiral_type, entry_lengths=entry, exit_lengths=exit_,
+        )
+        return cls(name=name, entities=entities, profiles=tuple(profiles))
 
     def raw_to_display_station(self, raw_station: float) -> float:
         return self.station_equations.raw_to_display(raw_station)
