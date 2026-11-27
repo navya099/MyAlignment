@@ -152,6 +152,42 @@ def test_series_covers_entire_alignment_without_changing_scale():
         SheetComposer.compose(layout, axis, fg, eg, station_end=2000)
 
 
+@pytest.mark.parametrize(("end", "expected"), [
+    (2600, ((1200, 1900), (1900, 2600))),
+    (2700, ((1200, 1900), (1900, 2600), (2600, 2700))),
+])
+def test_series_honors_requested_700_m_span_at_fixed_scales(end, expected):
+    axis = _axis(length=2000).add_station_equation(1500, 3000)
+    layout = SheetLayout.standard_a1(plan_scale=1000, profile_scale=1000)
+    fg, eg = _profiles(end=3000)
+    scenes = SheetComposer.compose_series(
+        layout, axis, fg, eg, station_start=1200, station_end=end, station_span=700,
+        plan_tangent="start", render_plan_labels=False,
+    )
+    assert tuple(scene.metadata["station_range"] for scene in scenes) == expected
+    assert [scene.metadata["sheet_count"] for scene in scenes] == [len(expected)] * len(expected)
+    for scene, (left, right) in zip(scenes, expected, strict=True):
+        plan, = _items(scene, "C-ALIGN-LINE")
+        assert plan.points[1].x - plan.points[0].x == pytest.approx(right - left)
+        profile = scene.metadata["profile_transform"]
+        assert profile.start_station == left and profile.viewport.scale == 1000
+
+
+def test_series_rejects_span_larger_than_viewport_capacity_but_accepts_a_short_run():
+    axis = _axis(length=1000)
+    layout = SheetLayout.standard_a3()
+    with pytest.raises(ValueError, match="requires 700 m per sheet.*capacity is 383 m"):
+        SheetComposer.compose_series(layout, axis, station_span=700)
+    scene, = SheetComposer.compose_series(layout, axis, station_end=1220, station_span=700)
+    assert scene.metadata["station_range"] == (1000, 1220)
+
+
+@pytest.mark.parametrize("span", [0, -1, math.inf, math.nan])
+def test_series_rejects_invalid_station_span(span):
+    with pytest.raises(ValueError, match="station_span"):
+        SheetComposer.compose_series(SheetLayout.standard_a3(), _axis(), station_span=span)
+
+
 @pytest.mark.parametrize("plan_tangent", ["midpoint", "start"])
 def test_plan_series_uses_the_selected_tangent_of_each_sheet(plan_tangent):
     axis = (

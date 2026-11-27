@@ -208,4 +208,5 @@ SheetExporter.export_dxf(scene, "plan-profile.dxf")
 - `plan_center`는 평면 뷰포트 중심의 월드 XY입니다. 생략하면 선택한 선형 구간을 중심에 배치합니다. `scene.metadata["plan_transform"]`의 `to_world()`로 시트의 평면도 좌표를 월드 XY로 역변환할 수 있습니다.
 - 종단의 `profile_datum`은 그리드 하단 표고입니다. 생략하면 선택 구간의 종단과 투영 객체에서 기준고를 계산합니다. `profile_vertical_scale`을 생략하면 `ProfileViewStyle.vertical_exaggeration`으로 수직 축척을 정합니다. 그리드 밖의 종단 기하는 잘리므로 필요하면 기준고와 수직 축척을 조정합니다. 측점 방정식은 레이블에 적용하며, 도형 배치에는 원시 측점을 사용합니다. FG와 EG가 겹치면 절토·성토 밴드를 기본 표시합니다.
 - `surface=`로 지형 등고선을, `corridor=`로 저장된 피처라인과 표면 경계를 추가합니다. 관망이나 구조물 등 이미 그린 월드 XY 장면은 `plan_scene=`으로 전달합니다. 긴 구간은 `SheetComposer.compose_series()`로 동일 축척의 연속 시트를 만들 수 있습니다. `compose()`에서 끝 측점을 생략하면 첫 시트의 폭에 해당하는 구간을 사용합니다.
+- `compose_series(..., station_span=700)`은 전체 원시 측점 범위를 700m씩 나누고 마지막 장에 남은 구간을 배치합니다. 전체 범위를 제한하려면 `station_start`와 `station_end`를 함께 지정합니다. 예를 들어 A1에서 `plan_scale=1000, profile_scale=1000`을 쓰면 장당 700m를 배치할 수 있습니다. 현재 용지와 축척에서 필요한 폭을 확보할 수 없으면 허용 길이가 포함된 오류가 발생합니다. `station_span`을 생략하면 뷰포트 폭으로 장당 길이를 계산합니다.
 - SVG와 PDF의 용지 크기는 시트에서 가져옵니다. `SheetExporter.export_pdf()`에는 CairoSVG 또는 Inkscape가 필요합니다. DXF는 용지 mm 좌표로 변환된 도형을 R12 모델 공간에 기록합니다.

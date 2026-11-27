@@ -234,12 +234,23 @@ class SheetComposer:
     def compose_series(
         cls, layout: SheetLayout, alignment: Alignment, fg_profile: Profile | None = None,
         eg_profile: Profile | None = None, *, station_start: float | None = None, station_end: float | None = None,
+        station_span: float | None = None,
         plan_tangent: Literal["midpoint", "start"] = "midpoint",
         **options,
     ) -> tuple[Scene, ...]:
-        """같은 축척을 유지하며 연속된 측점 구간으로 시트를 만든다."""
+        """같은 축척으로 시트를 나눈다. station_span은 장당 원시 측점 길이(m)이다."""
         start, end = _station_range(alignment, station_start, station_end)
-        span = _capacity(layout)
+        capacity = _capacity(layout)
+        span = capacity
+        if station_span is not None:
+            if not math.isfinite(station_span) or station_span <= 0 or start + station_span == start:
+                raise ValueError("station_span must be finite, positive and advance the station")
+            span = min(station_span, end - start)
+            if span > capacity + 1e-8:
+                raise ValueError(
+                    f"station_span requires {span:g} m per sheet but the viewport capacity is {capacity:g} m "
+                    "at the current drawing scales"
+                )
         count = max(1, math.ceil((end - start) / span - 1e-12))
         scenes = []
         for index in range(count):
