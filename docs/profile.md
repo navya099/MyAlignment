@@ -19,7 +19,27 @@ axis = Alignment.from_pi_coords([(0, 0), (100, 0)], start_station=1000, profiles
 assert axis.eg_profile.elevation_at(1025) == 96
 ```
 
-기본 CSV 헤더는 `station`, `elevation`입니다. 다른 헤더나 구분자는 `station_column`, `elevation_column`, `delimiter`로 지정합니다. 두 메서드 모두 기본값으로 현황 종단(EG)을 만듭니다. 원시 측점은 두 개 이상이어야 하며 중복 없이 오름차순으로 입력합니다. 기존 빌더에 접선 구간을 일괄 추가하려면 `ProfileBuilder.add_points()`를 사용합니다.
+기본 CSV 헤더는 `station`, `elevation`입니다. 다른 헤더나 구분자는 `station_column`, `elevation_column`, `delimiter`로 지정합니다. 측점과 표고만 읽으면 기본값으로 현황 종단(EG)을 만듭니다. 원시 측점은 두 개 이상이어야 하며 중복 없이 오름차순으로 입력합니다. 기존 빌더에 접선 구간을 일괄 추가하려면 `ProfileBuilder.add_points()`를 사용합니다.
+
+## 계획 종단의 PVI 일괄 입력
+
+`Profile.from_pvis()`는 PVI 사이의 구배를 계산하고, 각 곡선의 시작점(VPC)과 끝점(VPT)에 맞춰 접선을 연결합니다. 세 번째 값으로 대칭 포물선의 전체 길이 또는 비대칭 포물선의 `(진입 길이, 진출 길이)`를 전달합니다. 곡선이 없는 점에서는 세 번째 값을 생략하거나 `None`을 사용합니다.
+
+```python
+from myalignment.profile import Profile
+
+design = Profile.from_pvis([
+    (0, 100),
+    (100, 104, 60),
+    (200, 99, (20, 30)),
+    (300, 102),
+], name="Design")
+assert abs(design.elevation_at(100) - 103.325) < 1e-9
+```
+
+곡선 제원을 넣은 행의 표고는 두 접선이 만나는 PVI 표고입니다. 따라서 같은 측점에서 계산한 실제 종곡선 표고와 다를 수 있습니다. 첫 점과 끝 점에는 곡선을 지정할 수 없으며, 인접 종곡선은 서로 접할 수 있습니다. 곡선이 인접 PVI를 넘거나 서로 겹치면 입력 오류가 발생합니다.
+
+CSV에서 계획 종단을 읽을 때는 `Profile.from_csv("design.csv", curve_length_column="L")`을 사용합니다. 비대칭 곡선 열은 `length_in_column`과 `length_out_column`을 함께 지정합니다. 두 형식을 섞을 때는 행마다 전체 길이 또는 진입·진출 길이 한 쌍을 입력하며, 곡선이 없는 행은 길이 열을 비워 둡니다. 전체 길이 열의 `0`도 곡선이 없는 점으로 처리합니다. 기존 빌더에는 `ProfileBuilder.add_pvis()`로 추가할 수 있습니다.
 
 ## 접선과 수직곡선
 

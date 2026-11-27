@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Self
 
+from myalignment.profile._input import ProfilePoint, ProfilePVI, _point_tangents, _pvi_entities
 from myalignment.profile.label_set import ProfileLabelSet
 from myalignment.profile.label_style import ProfileLabelStyle
 from myalignment.profile.label_type import ProfileLabelType
@@ -21,29 +22,6 @@ from myalignment.profile.station_mapped_entity import StationMappedProfileEntity
 
 if TYPE_CHECKING:
     from myalignment.alignment.station_map import StationMap
-
-
-def _point_tangents(points: Iterable[tuple[float | str, float | str]]) -> list[ProfileTangent]:
-    tangents = []
-    previous = None
-    for index, row in enumerate(points, start=1):
-        if isinstance(row, (str, bytes)):
-            raise ValueError(f"Profile row {index}: expected a numeric station and elevation")
-        try:
-            station, elevation = row
-            station, elevation = float(station), float(elevation)
-        except (TypeError, ValueError, OverflowError) as error:
-            raise ValueError(f"Profile row {index}: expected a numeric station and elevation") from error
-        if not math.isfinite(station) or not math.isfinite(elevation):
-            raise ValueError(f"Profile row {index}: station and elevation must be finite")
-        if previous is not None:
-            if station <= previous[0]:
-                raise ValueError(f"Profile row {index}: raw stations must be strictly increasing")
-            tangents.append(ProfileTangent.create(previous[0], station, previous[1], elevation))
-        previous = station, elevation
-    if not tangents:
-        raise ValueError("At least two profile points are required")
-    return tangents
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +42,7 @@ class Profile:
 
     @classmethod
     def from_points(
-        cls, points: Iterable[tuple[float | str, float | str]], *, name: str = "Profile1",
+        cls, points: Iterable[ProfilePoint], *, name: str = "Profile1",
         profile_type: ProfileType = ProfileType.EG,
     ) -> Self:
         """오름차순 (원시 측점, 표고) 행을 접선으로 연결한다."""
@@ -72,23 +50,54 @@ class Profile:
         return cls(name=name, profile_type=profile_type, entities=entities)
 
     @classmethod
+    def from_pvis(
+        cls, pvis: Iterable[ProfilePVI], *, name: str = "Profile1", profile_type: ProfileType = ProfileType.FG,
+    ) -> Self:
+        """PVI 측점·표고와 선택한 포물선 길이로 접선과 종곡선을 생성한다."""
+        entities = ProfileEntityCollection(tuple(_pvi_entities(pvis)))
+        return cls(name=name, profile_type=profile_type, entities=entities)
+
+    @classmethod
     def from_csv(
-        cls, path: str | Path, *, name: str = "Profile1", profile_type: ProfileType = ProfileType.EG,
+        cls, path: str | Path, *, name: str = "Profile1", profile_type: ProfileType | None = None,
         station_column: str = "station", elevation_column: str = "elevation",
+        curve_length_column: str | None = None, length_in_column: str | None = None,
+        length_out_column: str | None = None,
         delimiter: str = ",", encoding: str = "utf-8-sig",
     ) -> Self:
-        """헤더가 있는 CSV에서 원시 측점과 표고 열을 읽는다."""
-        if not station_column or not elevation_column or station_column == elevation_column:
-            raise ValueError("station_column and elevation_column must be distinct nonempty names")
+        """측점·표고 열과 선택한 종곡선 길이 열을 읽는다."""
+        if (length_in_column is None) != (length_out_column is None):
+            raise ValueError("length_in_column and length_out_column must be set together")
+        curve_columns = tuple(
+            column for column in (curve_length_column, length_in_column, length_out_column) if column is not None
+        )
+        columns = (station_column, elevation_column, *curve_columns)
+        if not all(columns) or len(set(columns)) != len(columns):
+            raise ValueError("CSV column names must be distinct and nonempty")
         with Path(path).open(encoding=encoding, newline="") as stream:
             reader = csv.DictReader(stream, delimiter=delimiter)
             header = reader.fieldnames or []
-            for column in (station_column, elevation_column):
+            for column in columns:
                 if header.count(column) != 1:
                     raise ValueError(f"CSV must contain exactly one {column!r} column")
+            if curve_columns:
+                def pvis():
+                    for index, row in enumerate(reader, start=1):
+                        total = (row[curve_length_column] or "").strip() if curve_length_column is not None else ""
+                        left = (row[length_in_column] or "").strip() if length_in_column is not None else ""
+                        right = (row[length_out_column] or "").strip() if length_out_column is not None else ""
+                        if left or right:
+                            if total or not (left and right):
+                                raise ValueError(f"Profile row {index}: specify a total length or both curve lengths")
+                            spec = (left, right)
+                        else:
+                            spec = total or None
+                        yield row[station_column], row[elevation_column], spec
+
+                return cls.from_pvis(pvis(), name=name, profile_type=profile_type or ProfileType.FG)
             return cls.from_points(
                 ((row[station_column], row[elevation_column]) for row in reader),
-                name=name, profile_type=profile_type,
+                name=name, profile_type=profile_type or ProfileType.EG,
             )
 
     def with_label_set(self, label_set: ProfileLabelSet) -> "Profile":
@@ -212,9 +221,14 @@ class ProfileBuilder:
         )
         return self
 
-    def add_points(self, points: Iterable[tuple[float | str, float | str]]) -> Self:
+    def add_points(self, points: Iterable[ProfilePoint]) -> Self:
         """오름차순 (원시 측점, 표고) 행을 일괄 접선으로 추가한다."""
         self._entities.extend(_point_tangents(points))
+        return self
+
+    def add_pvis(self, pvis: Iterable[ProfilePVI]) -> Self:
+        """PVI 목록의 접선과 종곡선을 기존 빌더에 추가한다."""
+        self._entities.extend(_pvi_entities(pvis))
         return self
 
     def add_symmetric_parabola(

@@ -86,3 +86,71 @@ def test_csv_rejects_missing_headers_and_reports_data_row(tmp_path):
     path.write_text("station,elevation\n0,10\n1,\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Profile row 2"):
         Profile.from_csv(path)
+
+
+def test_bulk_fg_creates_symmetric_and_asymmetric_vertical_curves():
+    from myalignment.profile.profile_asymmetric_parabola import ProfileAsymmetricParabola
+    from myalignment.profile.profile_symmetric_parabola import ProfileSymmetricParabola
+
+    rows = [(0, 100), (100, 104, 60), (200, 99, (20, 30)), (300, 102)]
+    ground = Profile.from_points([(0, 99), (300, 101)], name="Existing")
+    fg = Profile.from_pvis(iter(rows), name="Design")
+    axis = Alignment.from_pi_coords([(0, 0), (300, 0)], profiles=[fg, ground])
+    assert axis.fg_profile is fg and axis.eg_profile is ground
+    assert fg.pvi_count == 2 and len(fg.entities) == 5
+    first, second = fg.entities[1], fg.entities[3]
+    assert isinstance(first, ProfileSymmetricParabola)
+    assert isinstance(second, ProfileAsymmetricParabola)
+    assert (first.start_station, first.end_station, second.start_station, second.end_station) == (70, 130, 180, 230)
+    assert fg.elevation_at(100) == pytest.approx(103.325)
+    assert fg.elevation_at(200) == pytest.approx(99.48)
+    checked = ProfileBuilder("Design", ProfileType.FG).add_pvis(rows).build(validate_grades=True)
+    assert _geometry(checked) == _geometry(fg)
+
+
+def test_adjacent_vertical_curves_can_touch_without_a_zero_length_tangent():
+    profile = Profile.from_pvis([(0, 100), (100, 104, 50), (150, 102, 50), (225, 105)])
+    left, right = profile.entities[1:3]
+    assert left.end_station == right.start_station == 125
+    assert left.end_elevation == pytest.approx(right.start_elevation)
+    assert left.end_grade == pytest.approx(right.start_grade)
+    assert len(profile.entities) == 4
+
+
+def test_curve_can_reach_both_profile_endpoints_despite_decimal_rounding():
+    profile = Profile.from_pvis([(0.1, 100), (0.2, 104, 0.2), (0.3, 102)])
+    assert len(profile.entities) == 1
+    assert (profile.start_station, profile.end_station) == (0.1, 0.3)
+    assert profile.elevation_at(0.3) == pytest.approx(102)
+
+
+@pytest.mark.parametrize(("rows", "error"), [
+    ([(0, 100, 20), (100, 102)], "first and last"),
+    ([(0, 100), (100, 105), (200, 102, 20)], "first and last"),
+    ([(0, 100), (100, 105, 250), (200, 102)], "beyond an adjacent PVI"),
+    ([(0, 100), (100, 105, 60), (150, 101, 60), (250, 104)], "overlap"),
+    ([(0, 100), (100, 105, (20, 0)), (200, 102)], "finite and positive"),
+    ([(0, 100), (100, 105, float("nan")), (200, 102)], "finite and positive"),
+    ([(0, 100), (100, 105, 20), (200, 110)], "grade_in == grade_out"),
+])
+def test_invalid_fg_curve_definitions(rows, error):
+    with pytest.raises(ValueError, match=error):
+        Profile.from_pvis(rows)
+
+
+def test_csv_can_import_fg_with_mixed_curve_specs(tmp_path):
+    path = tmp_path / "design.csv"
+    path.write_text(
+        "station,elevation,L,Lin,Lout\n0,100,0,,\n100,104,60,,\n200,99,,20,30\n300,102,,,\n", encoding="utf-8",
+    )
+    profile = Profile.from_csv(path, curve_length_column="L", length_in_column="Lin", length_out_column="Lout")
+    expected = Profile.from_pvis([(0, 100), (100, 104, 60), (200, 99, (20, 30)), (300, 102)])
+    assert profile.profile_type is ProfileType.FG
+    assert _geometry(profile) == _geometry(expected)
+    assert Profile.from_csv(path).profile_type is ProfileType.EG
+
+    path.write_text("station,elevation,L,Lin,Lout\n0,100,,,\n100,104,60,20,30\n200,99,,,\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="row 2.*total length or both"):
+        Profile.from_csv(path, curve_length_column="L", length_in_column="Lin", length_out_column="Lout")
+    with pytest.raises(ValueError, match="must be set together"):
+        Profile.from_csv(path, length_in_column="Lin")
