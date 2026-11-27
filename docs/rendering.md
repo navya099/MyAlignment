@@ -179,8 +179,6 @@ SvgGallery.create(outputs.items(), "svg/index.html", title="평면도 비교")
 `SheetComposer`는 같은 원시 측점 구간의 평면도와 종단도를 한 시트에 배치합니다. 선형·지형의 월드 좌표와 종단의 측점·표고는 미터 단위로 입력하고, 출력 도형은 용지의 좌하단을 원점으로 하는 밀리미터 좌표를 사용합니다. 평면 축척과 종단의 수평·수직 축척을 각각 지정할 수 있습니다.
 
 ```python
-import math
-
 from myalignment.alignment import AlignmentBuilder
 from myalignment.export.sheet_exporter import SheetExporter
 from myalignment.profile import ProfileBuilder
@@ -197,7 +195,6 @@ layout = SheetLayout.standard_a3(plan_scale=500, profile_scale=1000, drawing_num
 scene = SheetComposer.compose(
     layout, alignment, design, ground,
     station_start=1020, station_end=1120,
-    plan_rotation=math.pi / 2,
     profile_datum=98, profile_vertical_scale=100,
 )
 profile_view = scene.metadata["profile_transform"]
@@ -206,7 +203,9 @@ SheetExporter.export_svg(scene, "plan-profile.svg")
 SheetExporter.export_dxf(scene, "plan-profile.dxf")
 ```
 
-- `plan_center`는 평면 뷰포트 중심의 월드 XY입니다. 생략하면 선택한 선형 구간을 중심에 배치합니다. `plan_rotation`은 월드 +X축에서 용지 +X축까지의 반시계 방향 각도(라디안)입니다. `scene.metadata["plan_transform"]`의 `to_world()`로 시트의 평면도 좌표를 월드 XY로 역변환할 수 있습니다.
+- 평면 뷰포트는 시트마다 원시 측점 구간의 중앙 접선에 맞춰 자동 회전합니다. 중앙에서 측점이 증가하는 접선 방향이 용지의 오른쪽을 향하며 북쪽 화살표도 같은 좌표 변환을 따릅니다. 방향을 직접 지정하려면 `plan_rotation`에 월드 +X축에서 용지 +X축까지의 반시계 방향 각도(라디안)를 전달합니다. `plan_rotation=0`이면 북쪽이 위를 향합니다.
+- `compose()`와 `compose_series()`에서 `plan_tangent="start"`를 지정하면 각 시트의 시작점에서 진행하는 접선이 용지 오른쪽을 향합니다. 시트가 선형 요소 경계에서 시작하면 다음 요소의 접선을 사용합니다. 기본값은 `plan_tangent="midpoint"`이며, `plan_rotation`을 지정하면 해당 각도를 우선 적용합니다.
+- `plan_center`는 평면 뷰포트 중심의 월드 XY입니다. 생략하면 선택한 선형 구간을 중심에 배치합니다. `scene.metadata["plan_transform"]`의 `to_world()`로 시트의 평면도 좌표를 월드 XY로 역변환할 수 있습니다.
 - 종단의 `profile_datum`은 그리드 하단 표고입니다. 생략하면 선택 구간의 종단과 투영 객체에서 기준고를 계산합니다. `profile_vertical_scale`을 생략하면 `ProfileViewStyle.vertical_exaggeration`으로 수직 축척을 정합니다. 그리드 밖의 종단 기하는 잘리므로 필요하면 기준고와 수직 축척을 조정합니다. 측점 방정식은 레이블에 적용하며, 도형 배치에는 원시 측점을 사용합니다. FG와 EG가 겹치면 절토·성토 밴드를 기본 표시합니다.
 - `surface=`로 지형 등고선을, `corridor=`로 저장된 피처라인과 표면 경계를 추가합니다. 관망이나 구조물 등 이미 그린 월드 XY 장면은 `plan_scene=`으로 전달합니다. 긴 구간은 `SheetComposer.compose_series()`로 동일 축척의 연속 시트를 만들 수 있습니다. `compose()`에서 끝 측점을 생략하면 첫 시트의 폭에 해당하는 구간을 사용합니다.
 - SVG와 PDF의 용지 크기는 시트에서 가져옵니다. `SheetExporter.export_pdf()`에는 CairoSVG 또는 Inkscape가 필요합니다. DXF는 용지 mm 좌표로 변환된 도형을 R12 모델 공간에 기록합니다.

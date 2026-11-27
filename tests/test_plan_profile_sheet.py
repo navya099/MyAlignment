@@ -61,7 +61,7 @@ def test_sheet_uses_real_scales_and_raw_station_window_at_project_coordinates():
     fg, eg = _profiles()
     layout = SheetLayout.standard_a3(plan_scale=500, profile_scale=1000)
     scene = SheetComposer.compose(
-        layout, axis, fg, eg, station_start=1020, station_end=1120, plan_rotation=math.pi / 2,
+        layout, axis, fg, eg, station_start=1020, station_end=1120,
         profile_vertical_scale=100, profile_datum=98,
     )
     plan, = _items(scene, "C-ALIGN-LINE")
@@ -152,6 +152,71 @@ def test_series_covers_entire_alignment_without_changing_scale():
         SheetComposer.compose(layout, axis, fg, eg, station_end=2000)
 
 
+@pytest.mark.parametrize("plan_tangent", ["midpoint", "start"])
+def test_plan_series_uses_the_selected_tangent_of_each_sheet(plan_tangent):
+    axis = (
+        AlignmentBuilder("Curve").with_pi_coords([(0, 0), (0, 150), (350, 150)])
+        .with_radii([None, 60, None]).with_start_station(1000).build()
+    )
+    layout = SheetLayout.custom(SheetSize.A4, profile_ratio=0, plan_scale=1000)
+    first, second = SheetComposer.compose_series(
+        layout, axis, plan_tangent=plan_tangent, render_plan_labels=False,
+    )
+    for scene in (first, second):
+        start, end = scene.metadata["station_range"]
+        middle = (start + end) / 2
+        transform = scene.metadata["plan_transform"]
+        reference = middle if plan_tangent == "midpoint" else start
+        assert transform.rotation == pytest.approx(axis.tangent_at(reference))
+        p0, p1 = (transform.to_paper(axis.point_at(station)) for station in (middle - 1, middle + 1))
+        assert p1.x > p0.x
+        if plan_tangent == "midpoint":
+            assert p1.y == pytest.approx(p0.y, abs=1e-8)
+    first_rotation = first.metadata["plan_transform"].rotation
+    if plan_tangent == "start":
+        assert first_rotation == pytest.approx(math.pi / 2)
+    else:
+        assert 0 < first_rotation < math.pi / 2
+    assert second.metadata["plan_transform"].rotation == pytest.approx(0)
+
+
+@pytest.mark.parametrize(("rotation", "delta"), [(None, (50, 0)), (0, (0, 50))])
+def test_start_tangent_uses_outgoing_element_and_respects_manual_rotation(rotation, delta):
+    axis = AlignmentBuilder("Corner").with_pi_coords([(0, 0), (100, 0), (100, 100)]).build()
+    layout = SheetLayout.standard_a3()
+    scene = SheetComposer.compose(
+        layout, axis, station_start=100, station_end=150, plan_tangent="start",
+        plan_rotation=rotation, render_plan_labels=False,
+    )
+    line, = _items(scene, "C-ALIGN-LINE")
+    start, end = line.points
+    assert (end.x - start.x, end.y - start.y) == pytest.approx(delta)
+
+
+@pytest.mark.parametrize(("rotation", "expected"), [(None, math.pi / 2), (0, 0), (math.pi / 4, math.pi / 4)])
+def test_plan_center_and_explicit_rotation_apply_to_world_geometry_and_text(rotation, expected):
+    axis = _axis(length=60, vertical=True)
+    layout = SheetLayout.standard_a3()
+    center = axis.point_at(1030)
+    style = Style(layer="Supplemental")
+    overlay = Scene().add_all((
+        Primitive.text(center, "World text", 2, rotation=math.pi / 4, style=style),
+        Primitive.arc(center, 4, 10, 85, style),
+    ))
+    scene = SheetComposer.compose(
+        layout, axis, plan_center=center, plan_rotation=rotation, plan_scene=overlay,
+        render_plan_labels=False,
+    )
+    transform = scene.metadata["plan_transform"]
+    p0, p1 = _items(scene, "C-ALIGN-LINE")[0].points
+    assert (p1.x - p0.x, p1.y - p0.y) == pytest.approx((60 * math.sin(expected), 60 * math.cos(expected)))
+    text, arc = _items(scene, "Supplemental")
+    assert text.points == arc.points == (transform.sheet_center,)
+    assert text.rotation == pytest.approx(math.pi / 4 - expected)
+    assert arc.start_angle == pytest.approx(10 - math.degrees(expected))
+    assert arc.end_angle == pytest.approx(85 - math.degrees(expected))
+
+
 def test_invalid_frames_and_scale_are_rejected():
     with pytest.raises(ValueError, match="must not overlap"):
         layout = SheetLayout.standard_a1()
@@ -164,7 +229,7 @@ def test_invalid_frames_and_scale_are_rejected():
 
 def test_export_retains_paper_origin_dimensions_and_dxf_geometry(tmp_path):
     layout = SheetLayout.standard_a3()
-    scene = SheetComposer.compose(layout, _axis(), *_profiles(), render_plan_labels=False)
+    scene = SheetComposer.compose(layout, _axis(vertical=True), *_profiles(), render_plan_labels=False)
     svg, dxf = tmp_path / "Sheet.svg", tmp_path / "Sheet.dxf"
     SheetExporter.export_svg(scene, svg)
     SheetExporter.export_dxf(scene, dxf)
@@ -175,6 +240,8 @@ def test_export_retains_paper_origin_dimensions_and_dxf_geometry(tmp_path):
     svg_line, = root.findall("s:g[@data-layer='C-ALIGN-LINE']/s:line", ns)
     assert float(svg_line.get("x1")) == pytest.approx(model_line.points[0].x)
     assert float(svg_line.get("y1")) == pytest.approx(297 - model_line.points[0].y)
+    assert float(svg_line.get("x2")) - float(svg_line.get("x1")) == pytest.approx(220)
+    assert float(svg_line.get("y2")) == pytest.approx(float(svg_line.get("y1")))
     assert "C-ALIGN-LINE" in dxf.read_text("cp949")
 
 

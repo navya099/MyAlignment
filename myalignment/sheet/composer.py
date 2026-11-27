@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import replace
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from cadgeom import Point2d
 
@@ -65,8 +65,15 @@ def _station_range(alignment, start, end):
     return start, end
 
 
-def _plan_transform(viewport, alignment, station_range, center, rotation, step):
+def _plan_transform(viewport, alignment, station_range, center, rotation, step, plan_tangent):
     start, end = station_range
+    if rotation is None:
+        if plan_tangent == "start":
+            # Use the outgoing element when the sheet starts at a geometry boundary.
+            entity = next(entity for entity in alignment.entities if entity.end_station > start)
+            rotation = entity.tangent_at(max(start, entity.start_station))
+        else:
+            rotation = alignment.tangent_at(start + (end - start) / 2)
     if center is not None:
         return PlanViewportTransform(viewport, center, rotation)
     frame = PlanViewportTransform(viewport, alignment.point_at(start), rotation)
@@ -138,16 +145,19 @@ class SheetComposer:
         cls, layout: SheetLayout, alignment: Alignment, fg_profile: Profile | None = None,
         eg_profile: Profile | None = None, surface: TinSurface | None = None, corridor: Corridor | None = None,
         station_start: float | None = None, station_end: float | None = None, *,
-        plan_center: Point2d | None = None, plan_rotation: float = 0.0, plan_sample_step: float = 1.0,
+        plan_center: Point2d | None = None, plan_rotation: float | None = None,
+        plan_tangent: Literal["midpoint", "start"] = "midpoint", plan_sample_step: float = 1.0,
         plan_scene: Scene | None = None, render_plan_labels: bool = True, render_profile_labels: bool = True,
         contour_style: ContourStyle | None = None, profile_style: ProfileViewStyle | None = None,
         profile_vertical_scale: float | None = None, profile_datum: float | None = None,
         bands: Sequence[ProfileViewBand] | None = None, earthwork_band_style: EarthworkBandStyle | None = None,
         projections: Sequence[ProfileViewProjection] | None = None, hatch_style: ProfileHatchStyle | None = None,
     ) -> Scene:
-        """한 시트를 반환한다. 측점 생략 시 첫 시트에 들어가는 구간을 선택한다."""
+        """평면 회전각을 생략하면 plan_tangent로 지정한 접선 방향을 사용한다."""
         if not math.isfinite(plan_sample_step) or plan_sample_step <= 0:
             raise ValueError("plan_sample_step must be finite and positive")
+        if plan_tangent not in ("midpoint", "start"):
+            raise ValueError("plan_tangent must be 'midpoint' or 'start'")
         start, end = _station_range(alignment, station_start, station_end)
         if station_end is None:
             end = min(end, start + _capacity(layout))
@@ -169,7 +179,9 @@ class SheetComposer:
         }
         if layout.plan_viewport is not None:
             viewport = layout.plan_viewport
-            transform = _plan_transform(viewport, alignment, station_range, plan_center, plan_rotation, plan_sample_step)
+            transform = _plan_transform(
+                viewport, alignment, station_range, plan_center, plan_rotation, plan_sample_step, plan_tangent,
+            )
             source = plan_scene if plan_scene is not None else Scene()
             if surface is not None:
                 style = contour_style or ContourStyle.standard()
@@ -182,7 +194,7 @@ class SheetComposer:
                 alignment, source, plan_sample_step, render_labels=render_plan_labels,
                 surface=surface, fg_profile=fg_profile, station_range=station_range,
             )
-            scene = place_scene(scene, source, viewport, transform.to_paper, rotation=-plan_rotation)
+            scene = place_scene(scene, source, viewport, transform.to_paper, rotation=-transform.rotation)
             scene = _frame(scene, viewport.bounds, "A-VIEWPORT")
             if layout.show_north_arrow:
                 scene = _north_arrow(scene, transform)
@@ -222,6 +234,7 @@ class SheetComposer:
     def compose_series(
         cls, layout: SheetLayout, alignment: Alignment, fg_profile: Profile | None = None,
         eg_profile: Profile | None = None, *, station_start: float | None = None, station_end: float | None = None,
+        plan_tangent: Literal["midpoint", "start"] = "midpoint",
         **options,
     ) -> tuple[Scene, ...]:
         """같은 축척을 유지하며 연속된 측점 구간으로 시트를 만든다."""
@@ -236,6 +249,6 @@ class SheetComposer:
                 layout.drawing_number and count > 1
             ) else layout
             scene = cls.compose(sheet_layout, alignment, fg_profile, eg_profile, station_start=left, station_end=right,
-                                **options)
+                                plan_tangent=plan_tangent, **options)
             scenes.append(replace(scene, metadata={**scene.metadata, "sheet_index": index + 1, "sheet_count": count}))
         return tuple(scenes)
